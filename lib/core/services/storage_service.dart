@@ -2,16 +2,15 @@
 // 
 // Handles all SharedPreferences operations:
 // - Auth token storage (save, get, clear)
+// - Customer & Vendor data storage for multi-vendor
 // - Light cache for products list
 // - User preferences
-// 
-// TODO: Add more storage keys as needed
-// TODO: Consider encryption for sensitive data in production
 
 import 'dart:convert';
 import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../models/Setting.dart'; // Settings model
+import '../../models/Setting.dart';
+import '../../models/customer.dart';
 
 class StorageService extends GetxService {
   late SharedPreferences _prefs;
@@ -20,6 +19,8 @@ class StorageService extends GetxService {
   static const String keyAuthToken = 'auth_token';
   static const String keyRefreshToken = 'refresh_token';
   static const String keyUser = 'user_data';
+  static const String keyCustomer = 'customer_data';
+  static const String keyVendor = 'vendor_data';
   static const String keyProductsCache = 'products_cache';
   static const String keyCartCache = 'cart_cache';
   static const String keyIsFirstLaunch = 'is_first_launch';
@@ -72,7 +73,7 @@ class StorageService extends GetxService {
     return await _prefs.remove(keyRefreshToken);
   }
   
-  // ============ USER DATA ============
+  // ============ USER DATA (Legacy) ============
   
   /// Save user data as JSON string
   Future<bool> saveUser(Map<String, dynamic> userData) async {
@@ -91,6 +92,74 @@ class StorageService extends GetxService {
   /// Clear user data
   Future<bool> clearUser() async {
     return await _prefs.remove(keyUser);
+  }
+
+  // ============ CUSTOMER DATA (Multi-Vendor) ============
+  
+  /// Save customer data
+  Future<bool> saveCustomer(Customer customer) async {
+    return await _prefs.setString(keyCustomer, jsonEncode(customer.toJson()));
+  }
+  
+  /// Get customer data
+  Customer? getCustomer() {
+    final customerStr = _prefs.getString(keyCustomer);
+    if (customerStr != null && customerStr.isNotEmpty) {
+      try {
+        return Customer.fromJson(jsonDecode(customerStr));
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+  
+  /// Clear customer data
+  Future<bool> clearCustomer() async {
+    return await _prefs.remove(keyCustomer);
+  }
+
+  // ============ VENDOR DATA (Multi-Vendor) ============
+  
+  /// Save vendor data
+  Future<bool> saveVendor(Vendor vendor) async {
+    return await _prefs.setString(keyVendor, jsonEncode(vendor.toJson()));
+  }
+  
+  /// Get vendor data
+  Vendor? getVendor() {
+    final vendorStr = _prefs.getString(keyVendor);
+    if (vendorStr != null && vendorStr.isNotEmpty) {
+      try {
+        return Vendor.fromJson(jsonDecode(vendorStr));
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+  
+  /// Clear vendor data
+  Future<bool> clearVendor() async {
+    return await _prefs.remove(keyVendor);
+  }
+
+  /// Get customer's discount percentage
+  double getCustomerDiscount() {
+    final customer = getCustomer();
+    return customer?.discountPercentage ?? 0;
+  }
+
+  /// Get vendor store name
+  String? getVendorStoreName() {
+    final vendor = getVendor();
+    return vendor?.storeName;
+  }
+
+  /// Get vendor store logo URL
+  String? getVendorLogoUrl() {
+    final vendor = getVendor();
+    return vendor?.storeLogoUrl;
   }
   
   // ============ PRODUCTS CACHE ============
@@ -186,11 +255,14 @@ class StorageService extends GetxService {
     return await _prefs.clear();
   }
   
-  /// Clear only auth-related data
+  /// Clear only auth-related data (for logout)
   Future<void> clearAuthData() async {
     await clearToken();
     await clearRefreshToken();
     await clearUser();
+    await clearCustomer();
+    await clearVendor();
+    await clearProductsCache();
   }
 
   // ============ APP SETTINGS ============

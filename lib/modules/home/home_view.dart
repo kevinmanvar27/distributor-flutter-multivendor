@@ -11,6 +11,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/authenticated_image.dart';
 import '../../models/Home.dart' hide Image;
 import '../../routes/app_routes.dart';
 import '../cart/cart_controller.dart';
@@ -107,34 +108,66 @@ class HomeView extends GetView<HomeController> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Title row
+            // Title row - Shows vendor branding
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(5),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.95),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Image.asset(
-                      'assets/images/distributor-app.png',
-                      width: 20,
-                      height: 20,
-                    ),
-                  ),
+                  // Vendor logo or default app icon
+                  Obx(() {
+                    final vendor = controller.vendor.value;
+                    final hasLogo = vendor?.storeLogoUrl != null && vendor!.storeLogoUrl!.isNotEmpty;
+                    
+                    return Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.95),
+                        shape: BoxShape.circle,
+                      ),
+                      child: hasLogo
+                          ? ClipOval(
+                              child: SizedBox(
+                                width: 28,
+                                height: 28,
+                                child: AuthenticatedImage(
+                                  imageUrl: vendor.storeLogoUrl!,
+                                  fit: BoxFit.cover,
+                                  errorWidget: Image.asset(
+                                    'assets/images/distributor-app.png',
+                                    width: 28,
+                                    height: 28,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : Image.asset(
+                              'assets/images/distributor-app.png',
+                              width: 28,
+                              height: 28,
+                            ),
+                    );
+                  }),
                   const SizedBox(width: 8),
-                  const Text(
-                    'Distributor App',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                  const Spacer(),
+                  // Vendor store name or default app name
+                  Obx(() {
+                    final vendor = controller.vendor.value;
+                    final storeName = vendor?.storeName ?? 'Distributor App';
+                    
+                    return Expanded(
+                      child: Text(
+                        storeName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.3,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    );
+                  }),
+                  const SizedBox(width: 8),
                 ],
               ),
             ),
@@ -172,17 +205,6 @@ class HomeView extends GetView<HomeController> {
                         ),
                       ),
                       const Spacer(),
-                      Container(
-                        height: 24,
-                        width: 1,
-                        color: AppTheme.borderColor,
-                      ),
-                      const SizedBox(width: 12),
-                      Icon(
-                        Icons.mic_none_rounded,
-                        color: AppTheme.primaryColor,
-                        size: 22,
-                      ),
                       const SizedBox(width: 12),
                     ],
                   ),
@@ -406,7 +428,7 @@ class HomeView extends GetView<HomeController> {
     );
   }
   
-  /// Single category item - Circular design
+  /// Single category item - Circular design with image support
   Widget _buildCategoryItem(Category category, int index) {
     // Different colors for categories
     final colors = [
@@ -434,6 +456,7 @@ class HomeView extends GetView<HomeController> {
     final bgColor = colors[index % colors.length];
     final iconColor = iconColors[index % iconColors.length];
     final categoryIcon = _getCategoryIcon(category.name);
+    final hasImage = category.displayImageUrl != null && category.displayImageUrl!.isNotEmpty;
     
     return GestureDetector(
       onTap: () => _navigateToSubcategories(category),
@@ -443,7 +466,7 @@ class HomeView extends GetView<HomeController> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Circular icon container
+            // Circular icon/image container
             Container(
               width: 60,
               height: 60,
@@ -462,13 +485,24 @@ class HomeView extends GetView<HomeController> {
                   ),
                 ],
               ),
-              child: Center(
-                child: Icon(
-                  categoryIcon,
-                  color: iconColor,
-                  size: 26,
-                ),
-              ),
+              clipBehavior: Clip.antiAlias,
+              child: hasImage
+                  ? AuthenticatedImage(
+                      imageUrl: category.displayImageUrl!,
+                      fit: BoxFit.cover,
+                      errorWidget: Icon(
+                        categoryIcon,
+                        color: iconColor,
+                        size: 26,
+                      ),
+                    )
+                  : Center(
+                      child: Icon(
+                        categoryIcon,
+                        color: iconColor,
+                        size: 26,
+                      ),
+                    ),
             ),
             const SizedBox(height: 8),
             // Category name
@@ -694,9 +728,8 @@ class HomeView extends GetView<HomeController> {
   }
   
   /// Premium Product Card - FIXED for responsiveness
+  /// Shows customer's discounted price from API
   Widget _buildProductCard(Product product, BuildContext context) {
-    // Calculate discount percentage if applicable
-    double? discountPercent;
     final screenWidth = MediaQuery.of(context).size.width;
     final deviceType = Responsive.getDeviceType(context);
     
@@ -705,15 +738,17 @@ class HomeView extends GetView<HomeController> {
         ? 165.0 
         : double.infinity;
 
-    final mrpValue = double.tryParse(product.mrp) ?? 0;
-    final sellingPriceValue = double.tryParse(product.sellingPrice) ?? 0;
+    // Use discountedPrice (customer's price) as the main price
+    final mrpValue = product.mrpValue;
+    final discountedPriceValue = product.discountedPriceValue;
     
-    final sellingPrice = (sellingPriceValue > 0) ? sellingPriceValue : mrpValue;
-    
-    if (mrpValue > 0 && sellingPrice < mrpValue) {
-      discountPercent = ((mrpValue - sellingPrice) / mrpValue * 100);
+    // Calculate discount percentage from MRP to customer's discounted price
+    double? discountPercent;
+    if (mrpValue > 0 && discountedPriceValue < mrpValue) {
+      discountPercent = ((mrpValue - discountedPriceValue) / mrpValue * 100);
     }
-    final formattedSellingPrice = '₹${_formatPrice(sellingPrice)}';
+    
+    final formattedPrice = '₹${_formatPrice(discountedPriceValue)}';
     final formattedMrp = '₹${_formatPrice(mrpValue)}';
     final hasDiscount = discountPercent != null && discountPercent > 0;
     
@@ -752,11 +787,11 @@ class HomeView extends GetView<HomeController> {
                     child: Container(
                       width: double.infinity,
                       color: const Color(0xFFF8F8F8),
-                      child: product.mainPhoto?.fullUrl != null
-                          ? Image.network(
-                              product.mainPhoto!.fullUrl!,
+                      child: product.displayImageUrl != null && product.displayImageUrl!.isNotEmpty
+                          ? AuthenticatedImage(
+                              imageUrl: product.displayImageUrl!,
                               fit: BoxFit.contain,
-                              errorBuilder: (_, __, ___) => _buildImagePlaceholder(),
+                              errorWidget: _buildImagePlaceholder(),
                             )
                           : _buildImagePlaceholder(),
                     ),
@@ -805,40 +840,6 @@ class HomeView extends GetView<HomeController> {
                         ),
                       ),
                     ),
-                  // Cart quantity badge
-                  Obx(() {
-                    final cartController = Get.find<CartController>();
-                    final qty = cartController.getQuantityInCart(product.id);
-                    if (qty > 0) {
-                      return Positioned(
-                        top: 8,
-                        right: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primaryColor,
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Text(
-                            '$qty',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      );
-                    }
-                    return const SizedBox.shrink();
-                  }),
                 ],
               ),
             ),
@@ -862,12 +863,12 @@ class HomeView extends GetView<HomeController> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 8),
-                    // Price section
+                    // Price section - shows customer's discounted price
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          formattedSellingPrice,
+                          formattedPrice,
                           style: AppTheme.titleSmall.copyWith(
                             color: AppTheme.primaryColor,
                             fontWeight: FontWeight.w700,

@@ -1,11 +1,15 @@
-// Cart Controller
-// Cart Controller
+// Cart Controller - Multi-Vendor Customer Cart
 // 
-// Manages shopping cart state and operations:
-// - Fetch cart items from API
-// - Update cart item quantity
-// - Delete cart item
-// - Cart totals calculation
+// Manages shopping cart state and operations using customer APIs:
+// - Fetch cart items from /customer/cart API
+// - Add to cart via /customer/cart/add
+// - Update cart item quantity via /customer/cart/{id}
+// - Delete cart item via /customer/cart/{id}
+// - Clear cart via /customer/cart/clear
+// - Generate invoice via /customer/cart/generate-invoice
+// 
+// All cart operations are vendor-scoped (customers only see their vendor's products)
+// Customer discount is automatically applied by the API
 
 import 'package:get/get.dart';
 import 'package:flutter/material.dart';
@@ -34,6 +38,7 @@ class CartController extends GetxController {
   final RxString errorMessage = ''.obs;
   final RxBool isUpdating = false.obs;
   final RxString cartTotal = '0'.obs;
+  final RxDouble customerDiscount = 0.0.obs; // Customer's discount percentage
   
   late Razorpay _razorpay;
   final StorageService _storageService = Get.find<StorageService>();
@@ -107,7 +112,7 @@ class CartController extends GetxController {
   void _handlePaymentSuccess(PaymentSuccessResponse response) {
     _showSnackbar('Payment Successful', 'Transaction ID: ${response.paymentId}');
     // Generate Invoice with 'Approved' status after successful payment
-    _generateAndSaveInvoice(status: 'Approved', paymentId: response.paymentId);
+    _generateInvoiceAfterPayment(paymentId: response.paymentId);
   }
 
   void _handlePaymentError(PaymentFailureResponse response) {
@@ -118,15 +123,59 @@ class CartController extends GetxController {
   void _handleExternalWallet(ExternalWalletResponse response) {
     _showSnackbar('External Wallet', 'Wallet: ${response.walletName}');
     // Treat external wallet as successful payment
-    _generateAndSaveInvoice(status: 'Approved');
+    _generateInvoiceAfterPayment();
+  }
+
+  /// Generate invoice after successful online payment
+  Future<void> _generateInvoiceAfterPayment({String? paymentId}) async {
+    try {
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('GENERATING INVOICE AFTER PAYMENT SUCCESS');
+      debugPrint('Payment ID: $paymentId');
+      debugPrint('═══════════════════════════════════════════════════════════');
+
+      final response = await _apiService.post('/customer/cart/generate-invoice');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = response.data;
+        if (responseData['success'] == true && responseData['data'] != null) {
+          // Build invoice response from API response
+          final invoiceResponse = _buildInvoiceFromAPIResponse(responseData['data']);
+          
+          // Clear local cart (API already cleared it)
+          cartItems.clear();
+          cartItems.refresh();
+          cartTotal.value = '0';
+          
+          // Navigate to Invoice screen with data
+          Get.toNamed(Routes.invoice, arguments: invoiceResponse);
+          
+          // Show success message
+          final invoiceNumber = responseData['data']['invoice']?['invoice_number'] ?? 'N/A';
+          _showSnackbar('Invoice Generated', 'Invoice #$invoiceNumber created successfully');
+        } else {
+          throw Exception(responseData['message'] ?? 'Failed to generate invoice');
+        }
+      } else {
+        throw Exception('Failed to generate invoice: ${response.statusCode}');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('═══════════════════════════════════════════════════════════');
+      debugPrint('ERROR generating invoice after payment: $e');
+      debugPrint('Stack trace: $stackTrace');
+      debugPrint('═══════════════════════════════════════════════════════════');
+      _showSnackbar('Error', 'Payment successful but failed to generate invoice. Please contact support.', isError: true);
+    } finally {
+      isCheckingOut.value = false;
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // API Operations
+  // API Operations - Using Customer Cart APIs
   // ─────────────────────────────────────────────────────────────────────────────
 
   /// Fetch cart items from API
-  /// GET https://hardware.rektech.work/api/v1/cart
+  /// GET /api/v1/customer/cart
   Future<void> fetchCart() async {
     if (isLoading.value) {
       debugPrint('CartController: Already loading, skipping duplicate call');
@@ -138,7 +187,7 @@ class CartController extends GetxController {
     errorMessage.value = '';
     
     try {
-      final response = await _apiService.get('/cart');
+      final response = await _apiService.get('/customer/cart');
       
       debugPrint('CartController: API Response: ${response.data}');
       
@@ -156,6 +205,9 @@ class CartController extends GetxController {
               // Get total from API response
               cartTotal.value = cartData['total']?.toString() ?? '0';
               
+              // Get customer discount from API response
+              customerDiscount.value = _parseDouble(cartData['customer_discount']) ?? 0.0;
+              
               if (cartData['items'] is List) {
                 final itemsList = cartData['items'] as List;
                 items = _parseItemsList(itemsList);
@@ -170,6 +222,7 @@ class CartController extends GetxController {
         cartItems.addAll(items);
         cartItems.refresh();
         debugPrint('CartController: Loaded ${cartItems.length} items from API');
+        debugPrint('CartController: Customer discount: ${customerDiscount.value}%');
       }
     } catch (e, stackTrace) {
       debugPrint('CartController: Error fetching cart: $e');
@@ -192,7 +245,7 @@ class CartController extends GetxController {
   }
 
   /// Add a product to the cart
-  /// Creates a new cart item or increases quantity if already exists
+  /// POST /api/v1/customer/cart/add
   Future<void> addToCart(ProductItem product, {int quantity = 1}) async {
     try {
       // Check if product already exists in cart
@@ -231,22 +284,59 @@ class CartController extends GetxController {
   }
 
   /// Helper method to add a new item to cart via API
-  /// POST https://hardware.rektech.work/api/v1/cart/add
+  /// POST /api/v1/customer/cart/add
   Future<Item> _addNewItemToCart(ProductItem product, int quantity) async {
     final payload = {
       'product_id': product.id,
       'quantity': quantity,
     };
     
-    final response = await _apiService.post('/cart/add', data: payload);
+    final response = await _apiService.post('/customer/cart/add', data: payload);
     
     if (response.statusCode == 200 || response.statusCode == 201) {
       // Parse the response to create a new Item
-      final itemData = response.data['data'] ?? response.data;
-      return Item.fromJson(itemData);
+      final responseData = response.data;
+      if (responseData['success'] == true && responseData['data'] != null) {
+        final cartItemData = responseData['data']['cart_item'];
+        if (cartItemData != null) {
+          return _parseCartItemFromResponse(cartItemData, product);
+        }
+      }
+      // Fallback: create item from product data
+      return _createItemFromProduct(product, quantity);
     } else {
       throw Exception('Failed to add item to cart: ${response.data['message']}');
     }
+  }
+
+  /// Parse cart item from API response
+  Item _parseCartItemFromResponse(Map<String, dynamic> cartItemData, ProductItem product) {
+    return Item(
+      id: cartItemData['id'] ?? 0,
+      userId: 0,
+      sessionId: null,
+      productId: cartItemData['product_id'] ?? product.id,
+      quantity: cartItemData['quantity'] ?? 1,
+      price: cartItemData['price']?.toString() ?? product.discountedPrice,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+      product: product,
+    );
+  }
+
+  /// Create item from product (fallback)
+  Item _createItemFromProduct(ProductItem product, int quantity) {
+    return Item(
+      id: 0, // Will be updated on refresh
+      userId: 0,
+      sessionId: null,
+      productId: product.id,
+      quantity: quantity,
+      price: product.discountedPrice,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+      product: product,
+    );
   }
 
   /// Parse a list of items from the API response
@@ -259,10 +349,13 @@ class CartController extends GetxController {
         final itemMap = itemsList[i] as Map<String, dynamic>;
         debugPrint('CartController: Item $i keys: ${itemMap.keys.toList()}');
         
+        // Debug: Log all possible image URL fields
+        debugPrint('CartController: Item $i image fields - main_photo_url: ${itemMap['main_photo_url']}, image: ${itemMap['image']}, product_image: ${itemMap['product_image']}, image_url: ${itemMap['image_url']}, photo_url: ${itemMap['photo_url']}');
+        
         // Try to create an Item from this data
         try {
-          final item = Item.fromJson(itemMap);
-          debugPrint('CartController: Successfully created item: ${item.name}, quantity: ${item.quantity}');
+          final item = _parseCustomerCartItem(itemMap);
+          debugPrint('CartController: Successfully created item: ${item.name}, quantity: ${item.quantity}, imageUrl: ${item.imageUrl}');
           items.add(item);
         } catch (e) {
           debugPrint('CartController: Error creating item from data: $e');
@@ -273,6 +366,51 @@ class CartController extends GetxController {
     }
     
     return items;
+  }
+
+  /// Parse customer cart item from API response
+  /// Handles the /customer/cart response format
+  Item _parseCustomerCartItem(Map<String, dynamic> json) {
+    // Try to get image URL from various possible fields
+    final imageUrl = json['main_photo_url']?.toString() ?? 
+                     json['image']?.toString() ?? 
+                     json['product_image']?.toString() ??
+                     json['image_url']?.toString() ??
+                     json['photo_url']?.toString();
+    
+    debugPrint('CartController: Parsing cart item image URL: $imageUrl');
+    
+    // Create ProductItem from the cart item data
+    final product = ProductItem(
+      id: json['product_id'] ?? 0,
+      name: json['product_name'] ?? 'Unknown Product',
+      slug: json['product_slug'] ?? '',
+      description: json['product_description'] ?? '',
+      mrp: json['mrp']?.toString() ?? json['price']?.toString() ?? '0',
+      sellingPrice: json['selling_price']?.toString() ?? json['price']?.toString() ?? '0',
+      inStock: json['in_stock'] ?? true,
+      stockQuantity: json['stock_quantity'] ?? 999,
+      status: 'active',
+      productGallery: [],
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+      discountedPrice: json['price']?.toString() ?? '0',
+      mainPhoto: null,
+      mainPhotoId: null,
+      mainPhotoUrl: imageUrl,
+    );
+
+    return Item(
+      id: json['id'] ?? 0,
+      userId: json['user_id'] ?? 0,
+      sessionId: json['session_id'],
+      productId: json['product_id'] ?? product.id,
+      quantity: json['quantity'] ?? 1,
+      price: json['price']?.toString() ?? product.discountedPrice,
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ?? DateTime.now(),
+      updatedAt: DateTime.tryParse(json['updated_at']?.toString() ?? '') ?? DateTime.now(),
+      product: product,
+    );
   }
 
   /// Parse item from map with more flexible approach
@@ -291,12 +429,21 @@ class CartController extends GetxController {
     
     // If no product, create a minimal one from flat data
     if (product == null) {
+      // Try to get image URL from various possible fields
+      final imageUrl = json['main_photo_url']?.toString() ?? 
+                       json['image']?.toString() ?? 
+                       json['product_image']?.toString() ??
+                       json['image_url']?.toString() ??
+                       json['photo_url']?.toString();
+      
+      debugPrint('CartController: Parsing item (flexible) image URL: $imageUrl');
+      
       // Try to get product info from flat structure (not nested in 'product' key)
       product = ProductItem(
         id: json['product_id'] ?? json['productId'] ?? json['id'] ?? 0,
         name: json['product_name'] ?? json['productName'] ?? json['name'] ?? 'Unknown Product',
-        slug: json['slug'] ?? '',
-        description: json['description'] ?? '',
+        slug: json['product_slug'] ?? json['slug'] ?? '',
+        description: json['product_description'] ?? json['description'] ?? '',
         mrp: json['mrp']?.toString() ?? json['original_price']?.toString() ?? json['price']?.toString() ?? '0',
         sellingPrice: json['selling_price']?.toString() ?? json['price']?.toString() ?? '0',
         inStock: json['in_stock'] ?? json['inStock'] ?? true,
@@ -306,6 +453,7 @@ class CartController extends GetxController {
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
         discountedPrice: json['discounted_price']?.toString() ?? json['price']?.toString() ?? '0',
+        mainPhotoUrl: imageUrl,
       );
     }
     
@@ -327,6 +475,7 @@ class CartController extends GetxController {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /// Update cart item quantity
+  /// PUT /api/v1/customer/cart/{id}
   Future<void> updateCartItem(int cartItemId, int newQuantity) async {
     if (isUpdating.value) {
       debugPrint('CartController: Already updating cart, skipping duplicate call');
@@ -342,7 +491,7 @@ class CartController extends GetxController {
     
     try {
       final response = await _apiService.put(
-        '/cart/$cartItemId',
+        '/customer/cart/$cartItemId',
         data: {'quantity': newQuantity},
       );
       
@@ -364,6 +513,7 @@ class CartController extends GetxController {
   }
 
   /// Delete cart item
+  /// DELETE /api/v1/customer/cart/{id}
   Future<void> deleteCartItem(int cartItemId) async {
     if (isUpdating.value) {
       debugPrint('CartController: Already updating cart, skipping duplicate call');
@@ -373,7 +523,7 @@ class CartController extends GetxController {
     isUpdating.value = true;
     
     try {
-      final response = await _apiService.delete('/cart/$cartItemId');
+      final response = await _apiService.delete('/customer/cart/$cartItemId');
       
       if (response.statusCode == 200) {
         await fetchCart(); // Refresh cart
@@ -421,6 +571,7 @@ class CartController extends GetxController {
   }
 
   /// Clear entire cart
+  /// DELETE /api/v1/customer/cart/clear
   Future<void> clearCart() async {
     if (isUpdating.value) {
       debugPrint('CartController: Already updating cart, skipping clear');
@@ -430,14 +581,16 @@ class CartController extends GetxController {
     isUpdating.value = true;
     
     try {
-      // Delete all items one by one
-      for (final item in cartItems.toList()) {
-        await _apiService.delete('/cart/${item.id}');
-      }
+      final response = await _apiService.delete('/customer/cart/clear');
       
-      cartItems.clear();
-      cartItems.refresh();
-      _showSnackbar('Cart Cleared', 'All items have been removed');
+      if (response.statusCode == 200) {
+        cartItems.clear();
+        cartItems.refresh();
+        cartTotal.value = '0';
+        _showSnackbar('Cart Cleared', 'All items have been removed');
+      } else {
+        throw Exception('Failed to clear cart');
+      }
     } catch (e) {
       debugPrint('CartController: Error clearing cart: $e');
       _showSnackbar(
@@ -541,15 +694,15 @@ class CartController extends GetxController {
   }
 
   /// Process direct invoice generation (without payment)
-  /// Invoice status = Draft
+  /// Uses /customer/cart/generate-invoice API
   Future<void> _processDirectInvoice() async {
-    await _generateAndSaveInvoice(status: 'Draft', isDirectInvoice: true);
+    await _generateInvoiceFromAPI();
   }
 
   /// Process COD (Cash on Delivery)
   /// Generate invoice automatically with status = Approved
   Future<void> _processCOD() async {
-    await _generateAndSaveInvoice(status: 'Approved');
+    await _generateInvoiceFromAPI();
   }
 
   /// Process Razorpay Payment
@@ -579,72 +732,17 @@ class CartController extends GetxController {
     }
   }
 
-  /// Core method to generate invoice via API and save to DB
-  /// 
-  /// Status values:
-  /// - 'Approved' for COD and Payment flows
-  /// - 'Draft' for Generate Invoice only flow
-  Future<void> _generateAndSaveInvoice({required String status, String? paymentId, bool isDirectInvoice = false}) async {
+  /// Generate invoice using customer API
+  /// POST /api/v1/customer/cart/generate-invoice
+  Future<void> _generateInvoiceFromAPI() async {
     isCheckingOut.value = true;
     
     try {
-      // 1. Get User ID
-      final user = _storageService.getUser();
-      final userId = user?['id'] ?? 1;
-      
-      // 2. Generate Invoice Number and Session ID
-      final invoiceNumber = 'INV-${DateTime.now().millisecondsSinceEpoch}';
-      final sessionId = 'session_${DateTime.now().millisecondsSinceEpoch}';
-      
-      // 3. Calculate totals
-      final invoiceSubtotal = cartItems.fold<double>(0, (sum, item) => sum + item.subtotal);
-      final discountPercentage = 0;
-      final discountAmount = 0;
-      final shipping = 0.0;
-      final taxPercentage = 18;
-      final invoiceTaxAmount = (invoiceSubtotal * taxPercentage / 100);
-      final invoiceTotal = invoiceSubtotal - discountAmount + shipping + invoiceTaxAmount;
-      
-      // 4. Build cart items for invoice
-      final invoiceCartItems = cartItems.map((item) => {
-        'product_id': item.productId,
-        'name': item.product.name,
-        'quantity': item.quantity,
-        'price': item.priceValue,
-      }).toList();
-      
-      // 5. Prepare full payload with invoice_data
-      final payload = {
-        'user_id': userId,
-        'session_id': sessionId,
-        'invoice_number': invoiceNumber,
-        'total_amount': invoiceTotal,
-        'status': status,
-        if (paymentId != null) 'payment_id': paymentId,
-        'invoice_data': {
-          'cart_items': invoiceCartItems,
-          'subtotal': invoiceSubtotal,
-          'discount_percentage': discountPercentage,
-          'discount_amount': discountAmount,
-          'shipping': shipping,
-          'tax_percentage': taxPercentage,
-          'tax_amount': invoiceTaxAmount,
-          'total': invoiceTotal,
-          'notes': 'This is a proforma invoice and not a tax invoice.',
-        },
-      };
-
       debugPrint('═══════════════════════════════════════════════════════════');
-      debugPrint('GENERATE INVOICE - Payload:');
-      debugPrint('Status: $status');
-      debugPrint('Payload: $payload');
+      debugPrint('GENERATING INVOICE FROM CUSTOMER API');
       debugPrint('═══════════════════════════════════════════════════════════');
 
-      // 6. Call API
-      final response = await _apiService.post(
-        '/proforma-invoices',
-        data: payload,
-      );
+      final response = await _apiService.post('/customer/cart/generate-invoice');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         debugPrint('═══════════════════════════════════════════════════════════');
@@ -653,28 +751,27 @@ class CartController extends GetxController {
         debugPrint('Response Data: ${response.data}');
         debugPrint('═══════════════════════════════════════════════════════════');
         
-        // 7. Build invoice response from local data + API response
-        // The API may not return the full structure expected by GenerateInvoice model,
-        // so we construct it from the payload we sent + any server-generated fields
-        final invoice_model.GenerateInvoice invoiceResponse = _buildInvoiceFromPayload(
-          payload: payload,
-          apiResponse: response.data,
-          invoiceNumber: invoiceNumber,
-          status: status,
-          invoiceTotal: invoiceTotal,
-        );
-        
-        // 8. Clear cart from database for both Draft and Approved invoices
-        await _clearCartFromDatabase();
-        
-        // 9. Navigate to Invoice screen with data
-        Get.toNamed(Routes.invoice, arguments: invoiceResponse);
-        
-        // 10. Show success message
-        _showSnackbar('Invoice Generated', 'Invoice #$invoiceNumber created successfully');
-        
+        final responseData = response.data;
+        if (responseData['success'] == true && responseData['data'] != null) {
+          // Build invoice response from API response
+          final invoiceResponse = _buildInvoiceFromAPIResponse(responseData['data']);
+          
+          // Clear local cart (API already cleared it)
+          cartItems.clear();
+          cartItems.refresh();
+          cartTotal.value = '0';
+          
+          // Navigate to Invoice screen with data
+          Get.toNamed(Routes.invoice, arguments: invoiceResponse);
+          
+          // Show success message
+          final invoiceNumber = responseData['data']['invoice']?['invoice_number'] ?? 'N/A';
+          _showSnackbar('Invoice Generated', 'Invoice #$invoiceNumber created successfully');
+        } else {
+          throw Exception(responseData['message'] ?? 'Failed to generate invoice');
+        }
       } else {
-        throw Exception('Failed to generate invoice API response: ${response.statusCode}');
+        throw Exception('Failed to generate invoice: ${response.statusCode}');
       }
     } catch (e, stackTrace) {
       debugPrint('═══════════════════════════════════════════════════════════');
@@ -687,131 +784,82 @@ class CartController extends GetxController {
     }
   }
 
-  /// Build GenerateInvoice object from local payload and API response
-  /// This handles cases where API doesn't return the full expected structure
-  invoice_model.GenerateInvoice _buildInvoiceFromPayload({
-    required Map<String, dynamic> payload,
-    required dynamic apiResponse,
-    required String invoiceNumber,
-    required String status,
-    required double invoiceTotal,
-  }) {
-    // Extract server-generated ID if available
-    int invoiceId = 0;
-    DateTime createdAt = DateTime.now();
-    DateTime updatedAt = DateTime.now();
+  /// Build GenerateInvoice object from API response
+  invoice_model.GenerateInvoice _buildInvoiceFromAPIResponse(Map<String, dynamic> data) {
+    final invoiceData = data['invoice'] ?? {};
+    final invoiceDetails = data['invoice_data'] ?? data['data'] ?? {};
     
-    if (apiResponse is Map<String, dynamic>) {
-      // Try to get ID from various possible response structures
-      if (apiResponse['data'] != null && apiResponse['data'] is Map) {
-        final data = apiResponse['data'] as Map<String, dynamic>;
-        if (data['invoice'] != null && data['invoice'] is Map) {
-          invoiceId = data['invoice']['id'] ?? 0;
-          if (data['invoice']['created_at'] != null) {
-            createdAt = DateTime.tryParse(data['invoice']['created_at'].toString()) ?? DateTime.now();
-          }
-          if (data['invoice']['updated_at'] != null) {
-            updatedAt = DateTime.tryParse(data['invoice']['updated_at'].toString()) ?? DateTime.now();
-          }
-        } else {
-          invoiceId = data['id'] ?? 0;
-        }
-      } else if (apiResponse['invoice'] != null && apiResponse['invoice'] is Map) {
-        invoiceId = apiResponse['invoice']['id'] ?? 0;
-      } else {
-        invoiceId = apiResponse['id'] ?? 0;
-      }
-    }
+    debugPrint('═══════════════════════════════════════════════════════════');
+    debugPrint('Building invoice from API response:');
+    debugPrint('Invoice Data: $invoiceData');
+    debugPrint('Invoice Details: $invoiceDetails');
+    debugPrint('Cart Items Raw: ${invoiceDetails['cart_items']}');
+    debugPrint('═══════════════════════════════════════════════════════════');
     
-    // Get user info
-    final user = _storageService.getUser();
-    final userId = user?['id'] ?? 1;
-    final userName = user?['name'] ?? 'Customer';
-    final userEmail = user?['email'] ?? '';
-    final userAddress = user?['address'] ?? '';
-    final userMobile = user?['mobile_number'] ?? user?['phone'] ?? '';
+    // Parse cart items
+    final cartItemsList = (invoiceDetails['cart_items'] as List<dynamic>?)
+        ?.map((item) {
+          debugPrint('Parsing cart item: $item');
+          debugPrint('  - name field: ${item['name']}');
+          debugPrint('  - product_name field: ${item['product_name']}');
+          return invoice_model.CartItem(
+              id: item['id'] ?? item['product_id'] ?? 0,
+              productId: item['product_id'] ?? 0,
+              // Check both 'name' and 'product_name' fields
+              productName: item['name']?.toString() ?? item['product_name']?.toString() ?? '',
+              productDescription: item['product_description']?.toString() ?? item['description']?.toString() ?? '',
+              quantity: item['quantity'] ?? 1,
+              price: item['price']?.toString() ?? '0',
+              total: (item['total'] ?? ((item['quantity'] ?? 1) * (double.tryParse(item['price']?.toString() ?? '0') ?? 0))).toDouble(),
+            );
+        })
+        .toList() ?? [];
     
-    // Build cart items for invoice model
-    final invoiceCartItems = cartItems.asMap().entries.map((entry) {
-      final index = entry.key;
-      final item = entry.value;
-      return invoice_model.CartItem(
-        id: index + 1,
-        productId: item.productId,
-        productName: item.product.name,
-        productDescription: item.product.description,
-        quantity: item.quantity,
-        price: item.priceValue.toStringAsFixed(2),
-        total: item.subtotal,
-      );
-    }).toList();
+    // Parse customer info
+    final customerData = invoiceDetails['customer'] ?? {};
+    final customer = invoice_model.Customer(
+      id: customerData['id'] ?? 0,
+      name: customerData['name'] ?? '',
+      email: customerData['email'] ?? '',
+      address: customerData['address'] ?? '',
+      mobileNumber: customerData['mobile_number'] ?? '',
+    );
     
-    // Build the complete GenerateInvoice object
     return invoice_model.GenerateInvoice(
       success: true,
       message: 'Invoice generated successfully',
       data: invoice_model.GenerateInvoiceData(
         invoice: invoice_model.Invoice(
-          id: invoiceId,
-          invoiceNumber: invoiceNumber,
-          userId: userId,
-          totalAmount: invoiceTotal.toStringAsFixed(2),
-          invoiceData: payload['invoice_data'].toString(),
-          status: status,
-          createdAt: createdAt,
-          updatedAt: updatedAt,
+          id: invoiceData['id'] ?? 0,
+          invoiceNumber: invoiceData['invoice_number'] ?? '',
+          userId: 0,
+          totalAmount: invoiceData['total_amount']?.toString() ?? '0',
+          invoiceData: invoiceDetails.toString(),
+          status: invoiceData['status'] ?? 'Draft',
+          createdAt: DateTime.tryParse(invoiceData['created_at']?.toString() ?? '') ?? DateTime.now(),
+          updatedAt: DateTime.tryParse(invoiceData['updated_at']?.toString() ?? '') ?? DateTime.now(),
         ),
         invoiceData: invoice_model.InvoiceData(
-          cartItems: invoiceCartItems,
-          total: invoiceTotal,
-          invoiceDate: DateTime.now(),
-          customer: invoice_model.Customer(
-            id: userId,
-            name: userName,
-            email: userEmail,
-            address: userAddress,
-            mobileNumber: userMobile,
-          ),
+          cartItems: cartItemsList,
+          total: (invoiceDetails['total'] ?? 0).toDouble(),
+          invoiceDate: DateTime.tryParse(invoiceDetails['invoice_date']?.toString() ?? '') ?? DateTime.now(),
+          customer: customer,
         ),
       ),
     );
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Invoice Generation (Public method for direct invoice generation)
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  /// Generate invoice from current cart (Draft status)
-  /// This is called when user wants to generate invoice without payment
-  Future<void> generateInvoice() async {
-    await _processDirectInvoice();
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────────
   // Helpers
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /// Clear cart from database (used after successful checkout with Approved status)
-  Future<void> _clearCartFromDatabase() async {
-    try {
-      debugPrint('═══════════════════════════════════════════════════════════');
-      debugPrint('CLEARING CART FROM DATABASE');
-      debugPrint('═══════════════════════════════════════════════════════════');
-      
-      // Delete all cart items from database
-      for (final item in cartItems.toList()) {
-        await _apiService.delete('/cart/${item.id}');
-      }
-      
-      // Clear local cart
-      cartItems.clear();
-      cartItems.refresh();
-      
-      debugPrint('Cart cleared successfully from database');
-    } catch (e) {
-      debugPrint('Error clearing cart from database: $e');
-      // Don't throw - invoice was already generated successfully
-    }
+  /// Parse double from dynamic value
+  double? _parseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
   }
 
   void _showSnackbar(String title, String message, {bool isError = false}) {

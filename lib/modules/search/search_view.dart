@@ -15,7 +15,6 @@ import 'package:get/get.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/product_card.dart';
 import '../cart/cart_controller.dart';
-import '../wishlist/wishlist_controller.dart';
 import 'search_controller.dart' as search;
 
 class SearchView extends GetView<search.SearchController> {
@@ -282,182 +281,8 @@ class SearchView extends GetView<search.SearchController> {
               textAlign: TextAlign.center,
             ),
           ),
-          const SizedBox(height: AppTheme.spacingXl),
-          
-          // Popular searches section
-          _buildPopularSearches(),
-          
-          const SizedBox(height: AppTheme.spacingLg),
-          
-          // Recent searches section (placeholder)
-          _buildRecentSearches(),
         ],
       ),
-    );
-  }
-  
-  /// Popular searches section
-  Widget _buildPopularSearches() {
-    final popularSearches = [
-      'Electronics',
-      'Mobile Phones',
-      'Laptops',
-      'Headphones',
-      'Watches',
-      'Clothing',
-    ];
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                gradient: AppTheme.primaryGradient,
-                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-              ),
-              child: const Icon(
-                Icons.trending_up_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-            ),
-            const SizedBox(width: AppTheme.spacingSm),
-            Text(
-              'Popular Searches',
-              style: AppTheme.titleMedium.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppTheme.spacingMd),
-        
-        Wrap(
-          spacing: AppTheme.spacingSm,
-          runSpacing: AppTheme.spacingSm,
-          children: popularSearches.map((search) {
-            return Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () {
-                  controller.searchInputController.text = search;
-                  controller.onSearchSubmitted(search);
-                },
-                borderRadius: BorderRadius.circular(AppTheme.radiusFull),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(AppTheme.radiusFull),
-                    border: Border.all(color: AppTheme.borderColor),
-                    boxShadow: AppTheme.shadowSm,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.trending_up_rounded,
-                        size: 16,
-                        color: AppTheme.primaryColor.withValues(alpha: 0.7),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        search,
-                        style: AppTheme.bodyMedium.copyWith(
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-  
-  /// Recent searches section
-  Widget _buildRecentSearches() {
-    // Placeholder - would be populated from local storage
-    final recentSearches = <String>[];
-    
-    if (recentSearches.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppTheme.textSecondary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                  ),
-                  child: const Icon(
-                    Icons.history_rounded,
-                    color: AppTheme.textSecondary,
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: AppTheme.spacingSm),
-                Text(
-                  'Recent Searches',
-                  style: AppTheme.titleMedium.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-            TextButton(
-              onPressed: () {
-                // Clear recent searches
-              },
-              child: Text(
-                'Clear All',
-                style: AppTheme.bodySmall.copyWith(
-                  color: AppTheme.primaryColor,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppTheme.spacingSm),
-        
-        ...recentSearches.map((search) {
-          return ListTile(
-            leading: const Icon(
-              Icons.history_rounded,
-              color: AppTheme.textSecondary,
-            ),
-            title: Text(search),
-            trailing: IconButton(
-              icon: const Icon(Icons.close_rounded, size: 18),
-              onPressed: () {
-                // Remove from recent
-              },
-            ),
-            onTap: () {
-              controller.searchInputController.text = search;
-              controller.onSearchSubmitted(search);
-            },
-          );
-        }),
-      ],
     );
   }
   
@@ -766,45 +591,15 @@ class SearchView extends GetView<search.SearchController> {
                 crossAxisSpacing: AppTheme.spacingMd,
                 mainAxisSpacing: AppTheme.spacingMd,
               ),
-              itemCount: controller.searchResults.length + (controller.hasMore.value ? 1 : 0),
+              itemCount: controller.searchResults.length,
               itemBuilder: (context, index) {
-                // Loading indicator at the end
-                if (index >= controller.searchResults.length) {
-                  return Center(
-                    child: Container(
-                      padding: const EdgeInsets.all(AppTheme.spacingMd),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          SizedBox(
-                            width: 32,
-                            height: 32,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 3,
-                              valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
-                            ),
-                          ),
-                          const SizedBox(height: AppTheme.spacingSm),
-                          Text(
-                            'Loading more...',
-                            style: AppTheme.bodySmall.copyWith(
-                              color: AppTheme.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }
-                
                 final product = controller.searchResults[index];
-                final wishlistController = Get.find<WishlistController>();
                 return ProductCard(
                   productId: product.id,
                   name: product.name,
                   imageUrl: product.imageUrl,
                   mrp: product.mrpValue,
-                  sellingPrice: product.sellingPriceValue,
+                  sellingPrice: product.discountedPriceValue, // Use customer's discounted price
                   inStock: product.inStock,
                   discountPercent: product.discountPercent,
                   description: product.description,
@@ -814,11 +609,6 @@ class SearchView extends GetView<search.SearchController> {
                     final cartController = Get.find<CartController>();
                     cartController.addToCart(product.toProductItem());
                   },
-                  showFavorite: true,
-                  onFavorite: () {
-                    wishlistController.toggleWishlist(product.toProductItem());
-                  },
-                  isFavorite: wishlistController.isInWishlist(product.id),
                 );
               },
             )),

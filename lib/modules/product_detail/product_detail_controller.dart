@@ -2,6 +2,7 @@
 // 
 // Manages product detail screen:
 // - Product data loading
+// - Image gallery with swipe
 // - Quantity selection
 // - Add to cart
 // - Favorite toggle
@@ -25,6 +26,10 @@ class ProductDetailController extends GetxController {
   final RxBool isAddingToCart = false.obs;
   final RxBool isFavorite = false.obs;
   
+  // Image gallery
+  final PageController imagePageController = PageController();
+  final RxInt currentImageIndex = 0.obs;
+  
   @override
   void onInit() {
     super.onInit();
@@ -34,6 +39,8 @@ class ProductDetailController extends GetxController {
     if (args is ProductItem) {
       product.value = args;
       _printProductImageUrl();
+      // Always reload from API to get gallery_photos
+      loadProduct(args.id.toString());
     } else {
       // Load product from API using route parameter
       final productId = Get.parameters['id'];
@@ -43,29 +50,53 @@ class ProductDetailController extends GetxController {
     }
   }
   
+  @override
+  void onClose() {
+    imagePageController.dispose();
+    super.onClose();
+  }
+  
   /// Print product image URL to console
   void _printProductImageUrl() {
     if (product.value != null) {
       debugPrint('🖼️ ===== PRODUCT DETAIL IMAGE URL =====');
       debugPrint('🖼️ Product "${product.value!.name}" - Image: ${product.value!.imageUrl ?? "null"}');
+      debugPrint('🖼️ Gallery Photos: ${product.value!.galleryPhotos}');
+      debugPrint('🖼️ All Images: ${product.value!.allImages}');
       debugPrint('🖼️ =====================================');
     }
   }
 
-  /// Load product from API
+  /// Load product from /customer/products/{id} API
+  /// Returns product with customer-specific discounted_price
   Future<void> loadProduct(String productId) async {
     try {
       isLoading.value = true;
       hasError.value = false;
       errorMessage.value = '';
       
-      final response = await _apiService.get('/products/$productId');
+      // Use customer products API - returns vendor-scoped product with discount
+      final response = await _apiService.get('/customer/products/$productId');
       
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
-        final productData = data['data'] ?? data['product'] ?? data;
+        
+        // Handle response format: { success: true, data: { product } }
+        dynamic productData;
+        if (data['success'] == true && data['data'] != null) {
+          productData = data['data'];
+        } else {
+          productData = data['data'] ?? data['product'] ?? data;
+        }
+        
         product.value = ProductItem.fromJson(productData);
         _printProductImageUrl();
+        
+        // Reset image index
+        currentImageIndex.value = 0;
+        
+        // Log discount info
+        debugPrint('ProductDetail: Price: ${product.value?.sellingPrice}, Discounted: ${product.value?.discountedPrice}');
       } else {
         hasError.value = true;
         errorMessage.value = 'Product not found';
@@ -73,9 +104,24 @@ class ProductDetailController extends GetxController {
     } catch (e) {
       hasError.value = true;
       errorMessage.value = e.toString();
+      debugPrint('ProductDetail: Error loading product: $e');
     } finally {
       isLoading.value = false;
     }
+  }
+  
+  /// Change current image in gallery
+  void onImagePageChanged(int index) {
+    currentImageIndex.value = index;
+  }
+  
+  /// Jump to specific image
+  void goToImage(int index) {
+    imagePageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
   }
   
   /// Increment quantity

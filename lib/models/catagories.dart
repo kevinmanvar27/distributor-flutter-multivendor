@@ -1,5 +1,7 @@
 import '../core/utils/image_utils.dart' show buildImageUrl;
 
+import '../core/utils/image_utils.dart';
+
 class Categories {
   bool success;
   Data data;
@@ -31,6 +33,7 @@ class Data {
   DateTime updatedAt;
   int? productCount;
   Image? image;
+  String? _imageUrl; // Direct image_url from API
   List<Data>? subCategories;
   int? categoryId;
   List<Product>? products;
@@ -45,11 +48,12 @@ class Data {
     required this.createdAt,
     required this.updatedAt,
     required this.image,
+    String? imageUrl,
     this.subCategories,
     this.categoryId,
     this.productCount,
     this.products,
-  });
+  }) : _imageUrl = imageUrl;
 
   factory Data.fromJson(Map<String, dynamic> json) {
     // Parse subcategories
@@ -82,6 +86,7 @@ class Data {
           ? DateTime.parse(json['updated_at'])
           : DateTime.now(),
       image: json['image'] != null ? Image.fromJson(json['image']) : null,
+      imageUrl: json['image_url'], // Direct image_url from API
       subCategories: subCats,
       categoryId: json['category_id'],
       productCount: json['product_count'],
@@ -92,7 +97,13 @@ class Data {
   // Helper getters
   bool get hasSubCategories => subCategories != null && subCategories!.isNotEmpty;
   bool get hasProducts => products != null && products!.isNotEmpty;
-  String? get imageUrl => image?.fullUrl;
+  // Use direct image_url first, then fall back to image object
+  String? get imageUrl {
+    if (_imageUrl != null && _imageUrl!.isNotEmpty) {
+      return buildImageUrl(_imageUrl);
+    }
+    return image?.fullUrl;
+  }
   
   String get displayCount {
     if (hasProducts) {
@@ -154,6 +165,7 @@ class Product {
   String description;
   String mrp;
   String sellingPrice;
+  String discountedPrice; // Customer's discounted price from API
   bool inStock;
   int stockQuantity;
   String status;
@@ -166,6 +178,7 @@ class Product {
   DateTime createdAt;
   DateTime updatedAt;
   Image mainPhoto;
+  String? _mainPhotoUrl; // Direct URL from API
 
   Product({
     required this.id,
@@ -174,6 +187,7 @@ class Product {
     required this.description,
     required this.mrp,
     required this.sellingPrice,
+    required this.discountedPrice,
     required this.inStock,
     required this.stockQuantity,
     required this.status,
@@ -186,7 +200,8 @@ class Product {
     required this.createdAt,
     required this.updatedAt,
     required this.mainPhoto,
-  });
+    String? mainPhotoUrl,
+  }) : _mainPhotoUrl = mainPhotoUrl;
 
   factory Product.fromJson(Map<String, dynamic> json) {
     // Parse product gallery
@@ -212,6 +227,7 @@ class Product {
       description: json['description'] ?? '',
       mrp: json['mrp']?.toString() ?? '0',
       sellingPrice: json['selling_price']?.toString() ?? '0',
+      discountedPrice: json['discounted_price']?.toString() ?? json['selling_price']?.toString() ?? '0',
       inStock: json['in_stock'] ?? true,
       stockQuantity: json['stock_quantity'] ?? 0,
       status: json['status'] ?? '',
@@ -228,20 +244,32 @@ class Product {
           ? DateTime.parse(json['updated_at'])
           : DateTime.now(),
       mainPhoto: Image.fromJson(json['main_photo'] ?? {}),
+      mainPhotoUrl: json['main_photo_url']?.toString(),
     );
   }
 
   // Helper getters
   double get mrpValue => double.tryParse(mrp) ?? 0.0;
   double get sellingPriceValue => double.tryParse(sellingPrice) ?? 0.0;
+  double get discountedPriceValue => double.tryParse(discountedPrice) ?? sellingPriceValue;
   double get discountPercent {
-    if (mrpValue > 0 && sellingPriceValue < mrpValue) {
-      return ((mrpValue - sellingPriceValue) / mrpValue) * 100;
+    if (mrpValue > 0 && discountedPriceValue < mrpValue) {
+      return ((mrpValue - discountedPriceValue) / mrpValue) * 100;
     }
     return 0.0;
   }
-  bool get hasDiscount => discountPercent > 0;
-  String? get imageUrl => mainPhoto.fullUrl?.isNotEmpty == true ? mainPhoto.fullUrl : null;
+  bool get hasDiscount => discountedPriceValue < mrpValue;
+  
+  /// Get image URL - prefers main_photo_url, falls back to mainPhoto.fullUrl
+  String? get imageUrl {
+    // First try direct URL from API
+    if (_mainPhotoUrl != null && _mainPhotoUrl!.isNotEmpty) {
+      return buildImageUrl(_mainPhotoUrl);
+    }
+    // Fall back to mainPhoto object
+    final photoUrl = mainPhoto.fullUrl;
+    return photoUrl?.isNotEmpty == true ? photoUrl : null;
+  }
   
   /// Check if product belongs to a specific category
   bool belongsToCategory(int categoryId) {

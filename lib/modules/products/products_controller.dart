@@ -1,12 +1,12 @@
-// Products Controller
+// Products Controller - Multi-Vendor Customer Products
 // 
-// Manages products list from /products API ONLY.
-// - Simple product list (NO sections)
+// Manages products list from /customer/products API
+// - Products are vendor-scoped (customers only see their vendor's products)
+// - Prices include customer discount (discounted_price field)
 // - Pagination support
 // - Pull-to-refresh
-// - Search functionality
-// - NO /home API usage
-// - NO category filtering
+// - Search functionality via /customer/search
+// - Category filtering via /customer/categories/{id}/products
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -36,6 +36,11 @@ class ProductsController extends GetxController {
   final RxBool isSearching = false.obs;
   final RxString searchQuery = ''.obs;
   
+  // Category filter (optional)
+  final RxnInt categoryId = RxnInt(null);
+  final RxnInt subcategoryId = RxnInt(null);
+  final RxString categoryName = ''.obs;
+  
   // Debounce timer for search
   Timer? _searchDebounceTimer;
   static const _searchDebounceMs = 300;
@@ -51,6 +56,13 @@ class ProductsController extends GetxController {
       if (args['search'] == true) {
         isSearching.value = true;
       }
+      if (args['category_id'] != null) {
+        categoryId.value = args['category_id'];
+        categoryName.value = args['category_name'] ?? 'Category';
+      }
+      if (args['subcategory_id'] != null) {
+        subcategoryId.value = args['subcategory_id'];
+      }
     }
     
     loadProducts();
@@ -63,7 +75,7 @@ class ProductsController extends GetxController {
     super.onClose();
   }
   
-  /// Load products from /products API
+  /// Load products from /customer/products API
   Future<void> loadProducts() async {
     try {
       debugPrint('ProductsController: loadProducts() called');
@@ -118,9 +130,13 @@ class ProductsController extends GetxController {
   }
   
   /// Fetch products from API
-  /// Uses /products/search when searching, /products otherwise
+  /// Uses:
+  /// - /customer/search when searching
+  /// - /customer/categories/{id}/products when filtering by category
+  /// - /customer/products otherwise
   Future<List<Product>> _fetchProducts(int page) async {
     final bool isSearchMode = searchQuery.value.isNotEmpty;
+    final bool isCategoryMode = categoryId.value != null;
     
     // Build query parameters
     final queryParams = <String, dynamic>{
@@ -131,10 +147,19 @@ class ProductsController extends GetxController {
     // Determine endpoint
     String endpoint;
     if (isSearchMode) {
-      endpoint = '/products/search';
+      // Use customer search API
+      endpoint = '/customer/search';
       queryParams['q'] = searchQuery.value;
+      queryParams['limit'] = perPage;
+    } else if (isCategoryMode) {
+      // Use customer category products API
+      endpoint = '/customer/categories/${categoryId.value}/products';
+      if (subcategoryId.value != null) {
+        queryParams['subcategory_id'] = subcategoryId.value;
+      }
     } else {
-      endpoint = '/products';
+      // Use customer products API
+      endpoint = '/customer/products';
     }
     
     debugPrint('ProductsController: Fetching from $endpoint with params: $queryParams');
@@ -150,9 +175,35 @@ class ProductsController extends GetxController {
       final data = response.data;
       List<dynamic> productList;
       
-      // Handle response format: { data: { data: { data: [...] } } } or { data: [...] }
+      // Handle different response formats
       if (data is Map) {
-        if (data['data'] is Map && data['data']['data'] is List) {
+        // Check for success wrapper
+        if (data['success'] == true && data['data'] != null) {
+          final innerData = data['data'];
+          
+          if (innerData is List) {
+            // Search API returns: { success: true, data: [...] }
+            productList = innerData;
+            hasMore.value = false; // Search doesn't have pagination
+          } else if (innerData is Map) {
+            // Products API returns: { success: true, data: { data: [...], current_page: 1, ... } }
+            if (innerData['data'] is List) {
+              productList = innerData['data'];
+              
+              // Check pagination
+              final lastPage = innerData['last_page'] ?? 1;
+              hasMore.value = page < lastPage;
+              debugPrint('ProductsController: Pagination - page $page of $lastPage');
+            } else if (innerData['products'] is List) {
+              // Category products API might return: { products: [...] }
+              productList = innerData['products'];
+            } else {
+              productList = [];
+            }
+          } else {
+            productList = [];
+          }
+        } else if (data['data'] is Map && data['data']['data'] is List) {
           // Nested format: { data: { data: [...], current_page: 1, ... } }
           productList = data['data']['data'];
           
@@ -232,6 +283,22 @@ class ProductsController extends GetxController {
     if (!isSearching.value) {
       clearSearch();
     }
+  }
+  
+  /// Set category filter
+  void setCategory(int? catId, {String? name, int? subCatId}) {
+    categoryId.value = catId;
+    categoryName.value = name ?? 'Category';
+    subcategoryId.value = subCatId;
+    loadProducts();
+  }
+  
+  /// Clear category filter
+  void clearCategory() {
+    categoryId.value = null;
+    subcategoryId.value = null;
+    categoryName.value = '';
+    loadProducts();
   }
   
   /// Navigate to product detail

@@ -1,5 +1,6 @@
 import '../core/utils/image_utils.dart' show buildImageUrl;
 import 'category.dart' show ProductItem, ProductImage;
+import '../core/utils/image_utils.dart' show buildImageUrl;
 
 class Subcategories {
   bool success;
@@ -125,6 +126,7 @@ class Product {
   String description;
   String mrp;
   String sellingPrice;
+  String discountedPrice; // Customer's discounted price from API
   bool inStock;
   int stockQuantity;
   String status;
@@ -137,6 +139,7 @@ class Product {
   DateTime createdAt;
   DateTime updatedAt;
   MainPhoto mainPhoto;
+  String? _mainPhotoUrl; // Direct URL from API
 
   Product({
     required this.id,
@@ -145,6 +148,7 @@ class Product {
     required this.description,
     required this.mrp,
     required this.sellingPrice,
+    required this.discountedPrice,
     required this.inStock,
     required this.stockQuantity,
     required this.status,
@@ -157,7 +161,8 @@ class Product {
     required this.createdAt,
     required this.updatedAt,
     required this.mainPhoto,
-  });
+    String? mainPhotoUrl,
+  }) : _mainPhotoUrl = mainPhotoUrl;
 
   factory Product.fromJson(Map<String, dynamic> json) {
     // Parse product gallery
@@ -183,6 +188,7 @@ class Product {
       description: json['description'] ?? '',
       mrp: json['mrp']?.toString() ?? '0',
       sellingPrice: json['selling_price']?.toString() ?? '0',
+      discountedPrice: json['discounted_price']?.toString() ?? json['selling_price']?.toString() ?? '0',
       inStock: json['in_stock'] ?? true,
       stockQuantity: json['stock_quantity'] ?? 0,
       status: json['status'] ?? '',
@@ -199,6 +205,7 @@ class Product {
           ? DateTime.parse(json['updated_at'])
           : DateTime.now(),
       mainPhoto: MainPhoto.fromJson(json['main_photo'] ?? {}),
+      mainPhotoUrl: json['main_photo_url']?.toString(),
     );
   }
 
@@ -208,10 +215,13 @@ class Product {
   /// Get selling price as double
   double get sellingPriceValue => double.tryParse(sellingPrice) ?? 0.0;
 
-  /// Calculate discount percentage
+  /// Get discounted price as double (customer's price from API)
+  double get discountedPriceValue => double.tryParse(discountedPrice) ?? sellingPriceValue;
+
+  /// Calculate discount percentage (from MRP to customer's discounted price)
   double get discountPercent {
-    if (mrpValue > 0 && sellingPriceValue < mrpValue) {
-      return ((mrpValue - sellingPriceValue) / mrpValue) * 100;
+    if (mrpValue > 0 && discountedPriceValue < mrpValue) {
+      return ((mrpValue - discountedPriceValue) / mrpValue) * 100;
     }
     return 0.0;
   }
@@ -219,8 +229,16 @@ class Product {
   /// Check if product has discount
   bool get hasDiscount => discountPercent > 0;
 
-  /// Get image URL
-  String? get imageUrl => mainPhoto.fullUrl;
+  /// Get image URL - prefers main_photo_url, falls back to mainPhoto.fullUrl
+  String? get imageUrl {
+    // First try direct URL from API
+    if (_mainPhotoUrl != null && _mainPhotoUrl!.isNotEmpty) {
+      return buildImageUrl(_mainPhotoUrl);
+    }
+    // Fall back to mainPhoto object
+    final photoUrl = mainPhoto.fullUrl;
+    return photoUrl.isNotEmpty ? photoUrl : null;
+  }
 
   /// Convert to ProductItem (for compatibility with cart/wishlist)
   ProductItem toProductItem() {
@@ -242,7 +260,7 @@ class Product {
       metaKeywords: metaKeywords?.toString(),
       createdAt: createdAt,
       updatedAt: updatedAt,
-      discountedPrice: (sellingPrice),
+      discountedPrice: discountedPrice, // Use customer's discounted price
       mainPhoto: ProductImage(
         id: mainPhoto.id,
         name: mainPhoto.name,

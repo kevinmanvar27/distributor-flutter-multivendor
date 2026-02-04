@@ -6,9 +6,6 @@
 // - Request/Response logging
 // - Error handling with retry logic for 401
 // - Cancel tokens for long-running requests
-// 
-// TODO: Change baseUrl to your production API
-// TODO: Implement refresh token logic in _handleAuthError if your API supports it
 
 import 'package:dio/dio.dart';
 import 'package:get/get.dart' hide Response, FormData, MultipartFile;
@@ -18,8 +15,10 @@ class ApiService extends GetxService {
   late Dio _dio;
   final StorageService _storage = Get.find<StorageService>();
   
-  // TODO: Change this base URL to your production API
-  static const String baseUrl = 'https://hardware.rektech.work/api/v1';
+  // Production API base URL
+  static String get baseUrl {
+    return 'https://hardware.rektech.work/api/v1';
+  }
   
   // Timeouts
   static const int connectTimeout = 30000; // 30 seconds

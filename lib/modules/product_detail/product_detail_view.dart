@@ -14,7 +14,9 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../core/theme/app_theme.dart';
-import '../wishlist/wishlist_controller.dart';
+import '../../core/widgets/authenticated_image.dart';
+import '../cart/cart_controller.dart';
+import '../main/main_controller.dart';
 import 'product_detail_controller.dart';
 
 class ProductDetailView extends GetView<ProductDetailController> {
@@ -274,18 +276,18 @@ class ProductDetailView extends GetView<ProductDetailController> {
       
       // Action buttons with premium styling
       actions: [
-        // Favorite button with animation
-        Obx(() {
-          final wishlistController = Get.find<WishlistController>();
-          final isFavorite = wishlistController.isInWishlist(product.id);
-          return IconButton(
-            icon: Icon(
-              isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-              color: isFavorite ? AppTheme.errorColor : Colors.white,
-            ),
-            onPressed: () => wishlistController.toggleWishlist(product),
-          );
-        }),
+        // Cart button with badge
+        _buildCartButton(),
+        // Share button
+        IconButton(
+          icon: const Icon(
+            Icons.share_rounded,
+            color: Colors.white,
+          ),
+          onPressed: () {
+            Share.share('Check out this product: ${product.name}');
+          },
+        ),
       ],
       
       flexibleSpace: Container(
@@ -307,72 +309,279 @@ class ProductDetailView extends GetView<ProductDetailController> {
       ),
     );
   }
+
+  /// Cart button with badge for app bar
+  Widget _buildCartButton() {
+    return GetX<CartController>(
+      builder: (cartController) {
+        final itemCount = cartController.cartItems.length;
+        return GestureDetector(
+          onTap: () {
+            // Navigate to cart tab instead of separate route
+            try {
+              final mainController = Get.find<MainController>();
+              mainController.changeTab(2);
+              Get.until((route) => route.settings.name == '/main');
+            } catch (_) {
+              Get.toNamed('/cart');
+            }
+          },
+          child: Container(
+            margin: const EdgeInsets.symmetric(vertical: 8),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.shopping_cart_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+                if (itemCount > 0)
+                  Positioned(
+                    right: -4,
+                    top: -4,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        gradient: AppTheme.saleGradient,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                      child: Text(
+                        itemCount > 99 ? '99+' : itemCount.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
   
-  /// Product image section with hero animation and discount badge
+  /// Product image section with swipeable gallery (Flipkart style)
   Widget _buildProductImageSection(dynamic product) {
+    final List<String> images = product.allImages;
+    final bool hasMultipleImages = images.length > 1;
+    
     return Container(
-      height: 300,
       margin: const EdgeInsets.all(AppTheme.spacingMd),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(AppTheme.radiusLg),
         boxShadow: AppTheme.shadowMd,
       ),
-      child: Stack(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Product image with hero animation
-          Center(
-            child: Hero(
-              tag: 'products_${product.id}',
-              child: product.imageUrl != null
-                  ? Image.network(
-                      product.imageUrl!,
-                      fit: BoxFit.contain,
-                      height: 280,
-                      errorBuilder: (_, __, ___) => _buildImagePlaceholder(),
-                    )
-                  : _buildImagePlaceholder(),
+          // Main image gallery with PageView
+          SizedBox(
+            height: 300,
+            child: Stack(
+              children: [
+                // Swipeable images
+                if (images.isNotEmpty)
+                  PageView.builder(
+                    controller: controller.imagePageController,
+                    onPageChanged: controller.onImagePageChanged,
+                    itemCount: images.length,
+                    itemBuilder: (context, index) {
+                      return GestureDetector(
+                        onTap: () => _showFullScreenGallery(images, index),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Hero(
+                            tag: index == 0 ? 'products_${product.id}' : 'product_image_$index',
+                            child: AuthenticatedImage(
+                              imageUrl: images[index],
+                              fit: BoxFit.contain,
+                              placeholder: _buildImagePlaceholder(),
+                              errorWidget: _buildImagePlaceholder(),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  )
+                else
+                  Center(child: _buildImagePlaceholder()),
+                
+                // Discount badge
+                if (product.hasDiscount)
+                  Positioned(
+                    top: 16,
+                    left: 16,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: AppTheme.saleGradient,
+                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                        boxShadow: AppTheme.shadowMd,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.local_offer_rounded,
+                            color: Colors.white,
+                            size: 14,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${product.discountPercent.toStringAsFixed(0)}% OFF',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                
+                // Page indicator (dots) - only show if multiple images
+                if (hasMultipleImages)
+                  Positioned(
+                    bottom: 12,
+                    left: 0,
+                    right: 0,
+                    child: Obx(() => Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(
+                        images.length,
+                        (index) => AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          width: controller.currentImageIndex.value == index ? 20 : 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: controller.currentImageIndex.value == index
+                                ? AppTheme.dynamicPrimaryColor
+                                : Colors.grey.shade300,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ),
+                    )),
+                  ),
+                
+                // Image counter badge (top right)
+                if (hasMultipleImages)
+                  Positioned(
+                    top: 16,
+                    right: 16,
+                    child: Obx(() => Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${controller.currentImageIndex.value + 1}/${images.length}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    )),
+                  ),
+              ],
             ),
           ),
           
-          // Discount badge
-          if (product.hasDiscount)
-            Positioned(
-              top: 16,
-              left: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
+          // Thumbnail strip (only show if multiple images)
+          if (hasMultipleImages)
+            Container(
+              height: 70,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(color: Colors.grey.shade200),
                 ),
-                decoration: BoxDecoration(
-                  gradient: AppTheme.saleGradient,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                  boxShadow: AppTheme.shadowMd,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.local_offer_rounded,
-                      color: Colors.white,
-                      size: 14,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${product.discountPercent.toStringAsFixed(0)}% OFF',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
+              ),
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: images.length,
+                itemBuilder: (context, index) {
+                  return Obx(() {
+                    final isSelected = controller.currentImageIndex.value == index;
+                    return GestureDetector(
+                      onTap: () => controller.goToImage(index),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 54,
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isSelected 
+                                ? AppTheme.dynamicPrimaryColor 
+                                : Colors.grey.shade300,
+                            width: isSelected ? 2 : 1,
+                          ),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: AuthenticatedImage(
+                            imageUrl: images[index],
+                            fit: BoxFit.cover,
+                            placeholder: Container(
+                              color: Colors.grey.shade100,
+                              child: Icon(
+                                Icons.image_outlined,
+                                size: 20,
+                                color: Colors.grey.shade400,
+                              ),
+                            ),
+                            errorWidget: Container(
+                              color: Colors.grey.shade100,
+                              child: Icon(
+                                Icons.broken_image_outlined,
+                                size: 20,
+                                color: Colors.grey.shade400,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    );
+                  });
+                },
               ),
             ),
         ],
       ),
+    );
+  }
+  
+  /// Show full screen image gallery
+  void _showFullScreenGallery(List<String> images, int initialIndex) {
+    Get.dialog(
+      _FullScreenGallery(
+        images: images,
+        initialIndex: initialIndex,
+      ),
+      barrierColor: Colors.black,
     );
   }
   
@@ -457,13 +666,13 @@ class ProductDetailView extends GetView<ProductDetailController> {
           ),
           const SizedBox(height: AppTheme.spacingMd),
           
-          // Price section
+          // Price section - shows customer's discounted price
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              // Selling price (main)
+              // Customer's discounted price (main)
               Text(
-                '₹${product.sellingPriceValue.toStringAsFixed(0)}',
+                '₹${product.discountedPriceValue.toStringAsFixed(0)}',
                 style: AppTheme.headlineSmall2.copyWith(
                   fontWeight: FontWeight.w800,
                   color: AppTheme.textPrimary,
@@ -1079,7 +1288,7 @@ class ProductDetailView extends GetView<ProductDetailController> {
     try {
       final text = '''Check out this product:
 ${product.name}
-Price: ₹${product.sellingPriceValue.toStringAsFixed(0)}
+Price: ₹${product.discountedPriceValue.toStringAsFixed(0)}
 ${product.imageUrl ?? ''}''';
       
       final result = await SharePlus.instance.share(
@@ -1109,5 +1318,150 @@ ${product.imageUrl ?? ''}''';
         icon: const Icon(Icons.error_outline_rounded, color: Colors.white),
       );
     }
+  }
+}
+
+/// Full screen image gallery with pinch-to-zoom
+class _FullScreenGallery extends StatefulWidget {
+  final List<String> images;
+  final int initialIndex;
+
+  const _FullScreenGallery({
+    required this.images,
+    required this.initialIndex,
+  });
+
+  @override
+  State<_FullScreenGallery> createState() => _FullScreenGalleryState();
+}
+
+class _FullScreenGalleryState extends State<_FullScreenGallery> {
+  late PageController _pageController;
+  late int _currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          // Zoomable image gallery
+          PageView.builder(
+            controller: _pageController,
+            onPageChanged: (index) {
+              setState(() {
+                _currentIndex = index;
+              });
+            },
+            itemCount: widget.images.length,
+            itemBuilder: (context, index) {
+              return InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 4.0,
+                child: Center(
+                  child: AuthenticatedImage(
+                    imageUrl: widget.images[index],
+                    fit: BoxFit.contain,
+                    placeholder: const Center(
+                      child: CircularProgressIndicator(color: Colors.white),
+                    ),
+                    errorWidget: const Center(
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        color: Colors.white54,
+                        size: 64,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          
+          // Close button
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            right: 16,
+            child: GestureDetector(
+              onTap: () => Get.back(),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.close_rounded,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+            ),
+          ),
+          
+          // Image counter
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 16,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '${_currentIndex + 1} / ${widget.images.length}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          
+          // Bottom dots indicator
+          Positioned(
+            bottom: MediaQuery.of(context).padding.bottom + 24,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                widget.images.length,
+                (index) => AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  width: _currentIndex == index ? 24 : 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: _currentIndex == index
+                        ? Colors.white
+                        : Colors.white.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

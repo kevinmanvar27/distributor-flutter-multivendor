@@ -1,77 +1,92 @@
-// Auth Controller
+// Auth Controller - Multi-Vendor Customer Authentication
 // 
-// Handles authentication logic:
-// - Login with email/password
-// - Register new user
-// - Register staff with vendor verification
+// Handles customer authentication for multi-vendor system:
+// - Customer login with vendor context
 // - Logout
 // - Token management
-// - User data fetching
+// - Customer & Vendor data storage
 
 import 'package:get/get.dart';
 import '../../core/services/api_service.dart';
 import '../../core/services/storage_service.dart';
-import '../../models/user.dart';
+import '../../models/customer.dart';
 
 class AuthController extends GetxController {
   final ApiService _apiService = Get.find<ApiService>();
   final StorageService _storageService = Get.find<StorageService>();
   
-  final Rx<User?> currentUser = Rx<User?>(null);
+  // Current customer data
+  final Rx<Customer?> currentCustomer = Rx<Customer?>(null);
+  
+  // Current vendor data
+  final Rx<Vendor?> currentVendor = Rx<Vendor?>(null);
+  
+  // Loading & error states
   final RxBool isLoading = false.obs;
   final RxString errorMessage = ''.obs;
   
   @override
   void onInit() {
     super.onInit();
-    _loadCurrentUser();
+    _loadStoredData();
   }
   
-  void _loadCurrentUser() {
-    final userData = _storageService.getUser();
-    if (userData != null) {
-      currentUser.value = User.fromJson(userData);
-    }
+  /// Load stored customer and vendor data
+  void _loadStoredData() {
+    currentCustomer.value = _storageService.getCustomer();
+    currentVendor.value = _storageService.getVendor();
   }
   
-  /// Login with email and password
-  Future<bool> login(String email, String password) async {
+  /// Customer Login - Multi-Vendor API
+  /// POST /api/v1/customer/login
+  Future<bool> login(String email, String password, {String? vendorSlug}) async {
     try {
       isLoading.value = true;
       errorMessage.value = '';
       
+      final requestData = {
+        'email': email,
+        'password': password,
+      };
+      
+      // Add vendor_slug if provided (optional)
+      if (vendorSlug != null && vendorSlug.isNotEmpty) {
+        requestData['vendor_slug'] = vendorSlug;
+      }
+      
       final response = await _apiService.post(
-        '/login',
-        data: {
-          'email': email,
-          'password': password,
-        },
+        '/customer/login',
+        data: requestData,
       );
       
       if (response.statusCode == 200 && response.data != null) {
-        final data = response.data;
+        final loginResponse = CustomerLoginResponse.fromJson(response.data);
         
-        // Extract token from response
-        // API may return token in different formats
-        String? token;
-        if (data['token'] != null) {
-          token = data['token'];
-        } else if (data['access_token'] != null) {
-          token = data['access_token'];
-        } else if (data['data']?['token'] != null) {
-          token = data['data']['token'];
-        }
-        
-        if (token != null) {
+        if (loginResponse.success && loginResponse.token != null) {
           // Save token
-          await _storageService.saveToken(token);
+          await _storageService.saveToken(loginResponse.token!);
           
-          // Fetch user data
-          await _fetchAndSaveUser();
+          // Save customer data
+          if (loginResponse.customer != null) {
+            await _storageService.saveCustomer(loginResponse.customer!);
+            currentCustomer.value = loginResponse.customer;
+          }
+          
+          // Save vendor data
+          if (loginResponse.vendor != null) {
+            await _storageService.saveVendor(loginResponse.vendor!);
+            currentVendor.value = loginResponse.vendor;
+          }
+          
+          debugPrint('AuthController: Login successful for ${loginResponse.customer?.name}');
+          debugPrint('AuthController: Vendor: ${loginResponse.vendor?.storeName}');
+          debugPrint('AuthController: Discount: ${loginResponse.customer?.discountPercentage}%');
           
           return true;
         } else {
-          errorMessage.value = 'Invalid response from server';
+          errorMessage.value = loginResponse.message.isNotEmpty 
+              ? loginResponse.message 
+              : 'Login failed';
           return false;
         }
       } else {
@@ -79,6 +94,7 @@ class AuthController extends GetxController {
         return false;
       }
     } catch (e) {
+      debugPrint('AuthController: Login error: $e');
       errorMessage.value = e.toString();
       return false;
     } finally {
@@ -86,7 +102,8 @@ class AuthController extends GetxController {
     }
   }
   
-  /// Register a new user
+  /// Register - Not available for customers (vendors create customers)
+  /// Customers cannot self-register in multi-vendor system
   Future<bool> register({
     required String name,
     required String email,
@@ -94,69 +111,11 @@ class AuthController extends GetxController {
     required String passwordConfirmation,
     String? phone,
   }) async {
-    try {
-      isLoading.value = true;
-      errorMessage.value = '';
-      
-      final response = await _apiService.post(
-        '/register',
-        data: {
-          'name': name,
-          'email': email,
-          'password': password,
-          'password_confirmation': passwordConfirmation,
-          if (phone != null) 'phone': phone,
-        },
-      );
-      
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = response.data;
-        
-        // Some APIs auto-login after registration
-        String? token;
-        if (data['token'] != null) {
-          token = data['token'];
-        } else if (data['access_token'] != null) {
-          token = data['access_token'];
-        } else if (data['data']?['token'] != null) {
-          token = data['data']['token'];
-        }
-        
-        if (token != null) {
-          await _storageService.saveToken(token);
-          await _fetchAndSaveUser();
-          return true;
-        }
-        
-        // If no token, registration successful but needs login
-        Get.snackbar(
-          'Success',
-          'Registration successful. Please login.',
-          snackPosition: SnackPosition.BOTTOM,
-        );
-        return true;
-      } else {
-        // Handle validation errors
-        if (response.data?['errors'] != null) {
-          final errors = response.data['errors'] as Map<String, dynamic>;
-          final firstError = errors.values.first;
-          errorMessage.value = firstError is List 
-              ? firstError.first.toString() 
-              : firstError.toString();
-        } else {
-          errorMessage.value = response.data?['message'] ?? 'Registration failed';
-        }
-        return false;
-      }
-    } catch (e) {
-      errorMessage.value = e.toString();
-      return false;
-    } finally {
-      isLoading.value = false;
-    }
+    errorMessage.value = 'Customer registration is not available. Please contact your vendor.';
+    return false;
   }
   
-  /// Register a new staff member with vendor verification
+  /// Register Staff - Not available in customer app
   Future<bool> registerStaff({
     required String name,
     required String email,
@@ -165,93 +124,78 @@ class AuthController extends GetxController {
     required String phone,
     required String vendorEmail,
   }) async {
+    errorMessage.value = 'Staff registration is not available in customer app.';
+    return false;
+  }
+  
+  /// Fetch customer profile from API
+  /// GET /api/v1/customer/profile
+  Future<void> fetchProfile() async {
+    try {
+      isLoading.value = true;
+      
+      final response = await _apiService.get('/customer/profile');
+      
+      if (response.statusCode == 200 && response.data != null) {
+        final profileResponse = CustomerProfileResponse.fromJson(response.data);
+        
+        if (profileResponse.success) {
+          // Update customer data
+          if (profileResponse.customer != null) {
+            await _storageService.saveCustomer(profileResponse.customer!);
+            currentCustomer.value = profileResponse.customer;
+          }
+          
+          // Update vendor data
+          if (profileResponse.vendor != null) {
+            await _storageService.saveVendor(profileResponse.vendor!);
+            currentVendor.value = profileResponse.vendor;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('AuthController: Failed to fetch profile: $e');
+    } finally {
+      isLoading.value = false;
+    }
+  }
+  
+  /// Update customer profile
+  /// PUT /api/v1/customer/profile
+  Future<bool> updateProfile({
+    String? name,
+    String? mobileNumber,
+    String? address,
+    String? city,
+    String? state,
+    String? postalCode,
+  }) async {
     try {
       isLoading.value = true;
       errorMessage.value = '';
       
-      // First, verify vendor email exists
-      final verifyResponse = await _apiService.post(
-        '/verify-vendor',
-        data: {
-          'vendor_email': vendorEmail,
-        },
-      );
+      final data = <String, dynamic>{};
+      if (name != null) data['name'] = name;
+      if (mobileNumber != null) data['mobile_number'] = mobileNumber;
+      if (address != null) data['address'] = address;
+      if (city != null) data['city'] = city;
+      if (state != null) data['state'] = state;
+      if (postalCode != null) data['postal_code'] = postalCode;
       
-      // Check if vendor verification failed
-      if (verifyResponse.statusCode != 200 || verifyResponse.data?['success'] != true) {
-        errorMessage.value = 'Vendor email not found or invalid. Please check with your vendor.';
-        return false;
-      }
+      final response = await _apiService.put('/customer/profile', data: data);
       
-      // Get vendor ID from verification response
-      final vendorId = verifyResponse.data?['vendor_id'] ?? 
-                       verifyResponse.data?['data']?['vendor_id'];
-      
-      if (vendorId == null) {
-        errorMessage.value = 'Could not retrieve vendor information. Please try again.';
-        return false;
-      }
-      
-      // Register staff with vendor ID
-      final response = await _apiService.post(
-        '/register-staff',
-        data: {
-          'name': name,
-          'email': email,
-          'password': password,
-          'password_confirmation': passwordConfirmation,
-          'phone': phone,
-          'vendor_id': vendorId,
-          'vendor_email': vendorEmail,
-          'user_role': 'staff',
-        },
-      );
-      
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = response.data;
-        
-        // Extract token if auto-login after registration
-        String? token;
-        if (data['token'] != null) {
-          token = data['token'];
-        } else if (data['access_token'] != null) {
-          token = data['access_token'];
-        } else if (data['data']?['token'] != null) {
-          token = data['data']['token'];
-        }
-        
-        if (token != null) {
-          await _storageService.saveToken(token);
-          await _fetchAndSaveUser();
-          
-          Get.snackbar(
-            'Success',
-            'Staff registration successful!',
-            snackPosition: SnackPosition.BOTTOM,
-          );
+      if (response.statusCode == 200 && response.data != null) {
+        final success = response.data['success'] ?? false;
+        if (success) {
+          // Refresh profile data
+          await fetchProfile();
           return true;
-        }
-        
-        // If no token, registration successful but needs login
-        Get.snackbar(
-          'Success',
-          'Staff registration successful. Please login.',
-          snackPosition: SnackPosition.BOTTOM,
-        );
-        return true;
-      } else {
-        // Handle validation errors
-        if (response.data?['errors'] != null) {
-          final errors = response.data['errors'] as Map<String, dynamic>;
-          final firstError = errors.values.first;
-          errorMessage.value = firstError is List 
-              ? firstError.first.toString() 
-              : firstError.toString();
         } else {
-          errorMessage.value = response.data?['message'] ?? 'Staff registration failed';
+          errorMessage.value = response.data['message'] ?? 'Update failed';
+          return false;
         }
-        return false;
       }
+      return false;
     } catch (e) {
       errorMessage.value = e.toString();
       return false;
@@ -260,41 +204,66 @@ class AuthController extends GetxController {
     }
   }
   
-  /// Fetch current user data from API
-  Future<void> _fetchAndSaveUser() async {
+  /// Change customer password
+  /// PUT /api/v1/customer/change-password
+  Future<bool> changePassword({
+    required String currentPassword,
+    required String newPassword,
+    required String confirmPassword,
+  }) async {
     try {
-      final response = await _apiService.get('/user');
+      isLoading.value = true;
+      errorMessage.value = '';
+      
+      final response = await _apiService.put(
+        '/customer/change-password',
+        data: {
+          'current_password': currentPassword,
+          'password': newPassword,
+          'password_confirmation': confirmPassword,
+        },
+      );
       
       if (response.statusCode == 200 && response.data != null) {
-        // Handle different response formats
-        final userData = response.data['data'] ?? response.data['user'] ?? response.data;
-        final user = User.fromJson(userData);
-        await _storageService.saveUser(user.toJson());
-        currentUser.value = user;
+        final success = response.data['success'] ?? false;
+        if (success) {
+          Get.snackbar(
+            'Success',
+            'Password changed successfully',
+            snackPosition: SnackPosition.BOTTOM,
+          );
+          return true;
+        } else {
+          errorMessage.value = response.data['message'] ?? 'Password change failed';
+          return false;
+        }
       }
+      return false;
     } catch (e) {
-      // User fetch failed, but login was successful
-      // User can continue using the app
-      debugPrint('Failed to fetch user: $e');
+      errorMessage.value = e.toString();
+      return false;
+    } finally {
+      isLoading.value = false;
     }
   }
   
-  /// Logout current user
+  /// Logout customer
+  /// POST /api/v1/customer/logout
   Future<void> logout() async {
     try {
       isLoading.value = true;
       
       // Try to logout on server
       try {
-        await _apiService.post('/logout');
+        await _apiService.post('/customer/logout');
       } catch (e) {
-        // Server logout failed, but continue with local logout
-        debugPrint('Server logout failed: $e');
+        debugPrint('AuthController: Server logout failed: $e');
       }
       
       // Clear local data
       await _storageService.clearAuthData();
-      currentUser.value = null;
+      currentCustomer.value = null;
+      currentVendor.value = null;
       
       // Navigate to login
       Get.offAllNamed('/login');
@@ -303,8 +272,17 @@ class AuthController extends GetxController {
     }
   }
   
-  /// Check if user is authenticated
+  /// Check if customer is authenticated
   bool get isAuthenticated => _storageService.isAuthenticated();
+  
+  /// Get customer's discount percentage
+  double get customerDiscount => currentCustomer.value?.discountPercentage ?? 0;
+  
+  /// Get vendor store name
+  String get vendorStoreName => currentVendor.value?.storeName ?? 'Store';
+  
+  /// Get vendor logo URL
+  String? get vendorLogoUrl => currentVendor.value?.storeLogoUrl;
   
   /// Clear error message
   void clearError() {

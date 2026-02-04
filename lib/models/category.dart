@@ -198,6 +198,7 @@ class ProductItem {
   String status;
   int? mainPhotoId;
   List<int> productGallery;
+  List<String> galleryPhotos; // Direct URLs from API (gallery_photos)
   dynamic productCategories;
   String? metaTitle;
   String? metaDescription;
@@ -206,6 +207,7 @@ class ProductItem {
   DateTime updatedAt;
   String discountedPrice;
   ProductImage? mainPhoto;
+  String? _mainPhotoUrl; // Direct URL from API
 
   ProductItem({
     required this.id,
@@ -219,6 +221,7 @@ class ProductItem {
     required this.status,
     this.mainPhotoId,
     required this.productGallery,
+    this.galleryPhotos = const [],
     this.productCategories,
     this.metaTitle,
     this.metaDescription,
@@ -227,14 +230,24 @@ class ProductItem {
     required this.updatedAt,
     required this.discountedPrice,
     this.mainPhoto,
-  });
+    String? mainPhotoUrl,
+  }) : _mainPhotoUrl = mainPhotoUrl;
 
   factory ProductItem.fromJson(Map<String, dynamic> json) {
-    // Parse product gallery
+    // Parse product gallery (IDs)
     List<int> gallery = [];
     if (json['product_gallery'] is List) {
       gallery = (json['product_gallery'] as List)
           .map((e) => e is int ? e : int.tryParse(e.toString()) ?? 0)
+          .toList();
+    }
+
+    // Parse gallery photos (URLs from API)
+    List<String> galleryUrls = [];
+    if (json['gallery_photos'] is List) {
+      galleryUrls = (json['gallery_photos'] as List)
+          .map((e) => e?.toString() ?? '')
+          .where((url) => url.isNotEmpty)
           .toList();
     }
 
@@ -250,6 +263,7 @@ class ProductItem {
       status: json['status'] ?? '',
       mainPhotoId: json['main_photo_id'],
       productGallery: gallery,
+      galleryPhotos: galleryUrls,
       productCategories: json['product_categories'],
       metaTitle: json['meta_title'],
       metaDescription: json['meta_description'],
@@ -264,6 +278,11 @@ class ProductItem {
       mainPhoto: json['main_photo'] != null
           ? ProductImage.fromJson(json['main_photo'])
           : null,
+      // Try multiple possible image URL fields
+      mainPhotoUrl: json['main_photo_url']?.toString() ??
+                   json['image']?.toString() ??
+                   json['product_image']?.toString() ??
+                   json['image_url']?.toString(),
     );
   }
 
@@ -273,22 +292,62 @@ class ProductItem {
   /// Get selling price as double
   double get sellingPriceValue => double.tryParse(sellingPrice) ?? 0.0;
 
-  /// Get discounted price as double
-  double get discountedPriceValue => double.tryParse(discountedPrice) ?? 0.0;
+  /// Get discounted price as double (customer's price from API)
+  /// If discounted_price is 0 or not set, falls back to selling_price
+  double get discountedPriceValue {
+    final discounted = double.tryParse(discountedPrice) ?? 0.0;
+    // If discounted_price is 0 or invalid, use selling_price
+    if (discounted <= 0) {
+      return sellingPriceValue;
+    }
+    return discounted;
+  }
 
-  /// Calculate discount percentage
+  /// Calculate discount percentage (from MRP to customer's discounted price)
   double get discountPercent {
-    if (mrpValue > 0 && sellingPriceValue < mrpValue) {
-      return ((mrpValue - sellingPriceValue) / mrpValue) * 100;
+    final displayPrice = discountedPriceValue;
+    if (mrpValue > 0 && displayPrice < mrpValue) {
+      return ((mrpValue - displayPrice) / mrpValue) * 100;
     }
     return 0.0;
   }
 
-  /// Get image URL
-  String? get imageUrl => mainPhoto?.fullUrl;
+  /// Get image URL - prefers main_photo_url, falls back to mainPhoto.fullUrl
+  String? get imageUrl {
+    // First try direct URL from API
+    if (_mainPhotoUrl != null && _mainPhotoUrl!.isNotEmpty) {
+      return buildImageUrl(_mainPhotoUrl);
+    }
+    // Fall back to mainPhoto object
+    return mainPhoto?.fullUrl;
+  }
 
-  /// Check if product has discount
-  bool get hasDiscount => discountPercent > 0;
+  /// Get all images for gallery (main photo + gallery photos)
+  List<String> get allImages {
+    final List<String> images = [];
+    
+    // Add main photo first
+    final mainUrl = imageUrl;
+    if (mainUrl != null && mainUrl.isNotEmpty) {
+      images.add(mainUrl);
+    }
+    
+    // Add gallery photos (avoid duplicates)
+    for (final url in galleryPhotos) {
+      final builtUrl = buildImageUrl(url);
+      if (builtUrl != null && builtUrl.isNotEmpty && !images.contains(builtUrl)) {
+        images.add(builtUrl);
+      }
+    }
+    
+    return images;
+  }
+
+  /// Check if product has multiple images
+  bool get hasGallery => allImages.length > 1;
+
+  /// Check if product has discount (MRP vs customer's discounted price)
+  bool get hasDiscount => discountedPriceValue < mrpValue;
 
   /// Convert to JSON
   Map<String, dynamic> toJson() {
@@ -304,6 +363,7 @@ class ProductItem {
       'status': status,
       'main_photo_id': mainPhotoId,
       'product_gallery': productGallery,
+      'gallery_photos': galleryPhotos,
       'product_categories': productCategories,
       'meta_title': metaTitle,
       'meta_description': metaDescription,

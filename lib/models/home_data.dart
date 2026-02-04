@@ -72,17 +72,20 @@ class HomepageData {
 class HomeBranding {
   String brandName;
   String tagline;
-  dynamic logoUrl;
+  dynamic _logoUrl;
   String primaryColor;
   String secondaryColor;
 
   HomeBranding({
     required this.brandName,
     required this.tagline,
-    required this.logoUrl,
+    required dynamic logoUrl,
     required this.primaryColor,
     required this.secondaryColor,
-  });
+  }) : _logoUrl = logoUrl;
+
+  /// Get logo URL with proper base URL conversion
+  String? get logoUrl => _logoUrl != null ? buildImageUrl(_logoUrl.toString()) : null;
 
   factory HomeBranding.fromJson(Map<String, dynamic> json) {
     return HomeBranding(

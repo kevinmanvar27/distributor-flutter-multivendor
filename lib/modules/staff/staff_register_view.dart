@@ -186,9 +186,9 @@ class _StaffRegisterViewState extends State<StaffRegisterView> {
                 if (value == null || value.isEmpty) {
                   return 'Please enter your email';
                 }
-                if (!Validators.isValidEmail(value)) {
-                  return 'Please enter a valid email';
-                }
+                // if (!Validators.isValidEmail(value)) {
+                //   return 'Please enter a valid email';
+                // }
                 return null;
               },
             ),
@@ -224,9 +224,9 @@ class _StaffRegisterViewState extends State<StaffRegisterView> {
                 if (value == null || value.isEmpty) {
                   return 'Please enter vendor email';
                 }
-                if (!Validators.isValidEmail(value)) {
-                  return 'Please enter a valid email';
-                }
+                // if (!Validators.isValidEmail(value)) {
+                //   return 'Please enter a valid email';
+                // }
                 return null;
               },
             ),

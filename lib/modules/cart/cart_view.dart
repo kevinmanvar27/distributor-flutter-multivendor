@@ -11,6 +11,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/authenticated_image.dart';
 import '../../models/cart_item.dart';
 import '../main/main_controller.dart';
 import 'cart_controller.dart';
@@ -566,23 +567,16 @@ class CartView extends GetView<CartController> {
           borderRadius: BorderRadius.circular(10),
         ),
         child: item.imageUrl != null && item.imageUrl!.isNotEmpty
-            ? Image.network(
-                item.imageUrl!,
+            ? AuthenticatedImage(
+                imageUrl: item.imageUrl!,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _buildImagePlaceholder(),
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Center(
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppTheme.primaryColor.withValues(alpha: 0.5),
-                      value: loadingProgress.expectedTotalBytes != null
-                          ? loadingProgress.cumulativeBytesLoaded /
-                              loadingProgress.expectedTotalBytes!
-                          : null,
-                    ),
-                  );
-                },
+                placeholder: Center(
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppTheme.primaryColor.withValues(alpha: 0.5),
+                  ),
+                ),
+                errorWidget: _buildImagePlaceholder(),
               )
             : _buildImagePlaceholder(),
       ),
@@ -748,22 +742,7 @@ class CartView extends GetView<CartController> {
                     valueColor: AppTheme.successColor,
                     showIcon: true,
                   ),
-                  const SizedBox(height: 12),
                 ],
-                // Tax
-                _buildPriceRow(
-                  'Tax (${(controller.taxRate * 100).toInt()}%)',
-                  '₹${controller.taxAmount.toStringAsFixed(0)}',
-                ),
-                const SizedBox(height: 12),
-                // Delivery
-                _buildPriceRow(
-                  'Delivery Charges',
-                  controller.subtotal >= 499 ? 'FREE' : '₹40',
-                  valueColor: controller.subtotal >= 499
-                      ? AppTheme.successColor
-                      : null,
-                ),
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 14),
                   child: Divider(height: 1),
@@ -771,7 +750,7 @@ class CartView extends GetView<CartController> {
                 // Total
                 _buildPriceRow(
                   'Total Amount',
-                  '₹${controller.total.toStringAsFixed(0)}',
+                  '₹${controller.subtotal.toStringAsFixed(0)}',
                   isBold: true,
                 ),
               ],
@@ -892,7 +871,7 @@ class CartView extends GetView<CartController> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '₹${controller.total.toStringAsFixed(0)}',
+                  '₹${controller.subtotal.toStringAsFixed(0)}',
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w800,

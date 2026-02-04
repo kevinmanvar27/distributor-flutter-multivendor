@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
 import 'core/services/storage_service.dart';
 import 'core/services/api_service.dart';
-import 'modules/wishlist/wishlist_controller.dart';
 import 'routes/app_routes.dart';
 
 void main() async {
@@ -49,9 +47,6 @@ Future<void> _initServices() async {
   
   // Theme controller (manages reactive theme state)
   Get.put<ThemeController>(ThemeController(), permanent: true);
-  
-  // Wishlist controller (global, persists throughout app)
-  Get.put<WishlistController>(WishlistController(), permanent: true);
 }
 
 class DistributorApp extends StatelessWidget {

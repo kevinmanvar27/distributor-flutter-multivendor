@@ -7,11 +7,9 @@
 // - Professional error handling
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/validators.dart';
-import '../../routes/app_routes.dart';
 import 'auth_controller.dart';
 
 class LoginView extends StatefulWidget {
@@ -249,61 +247,42 @@ class _LoginViewState extends State<LoginView> {
               ),
               
               // ─────────────────────────────────────────────────────────────────
-              // Social Login & Register Section
+              // Contact Vendor Section (customers are created by vendors)
               // ─────────────────────────────────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Column(
                   children: [
-                    // Register link
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          "Don't have an account? ",
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: AppTheme.textSecondary,
-                          ),
+                    // Info text for new customers
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppTheme.dynamicPrimaryColor.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppTheme.dynamicPrimaryColor.withValues(alpha: 0.2),
                         ),
-                        GestureDetector(
-                          onTap: () => Get.toNamed(Routes.register),
-                          child: Text(
-                            'Sign Up',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: AppTheme.dynamicPrimaryColor,
-                              fontWeight: FontWeight.w700,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline_rounded,
+                            color: AppTheme.dynamicPrimaryColor,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'New customer? Contact your vendor to get your account credentials.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: AppTheme.textSecondary,
+                                height: 1.4,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    // Staff Registration Link
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          "Are you a staff member? ",
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: AppTheme.textSecondary,
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () => Get.toNamed(Routes.staffRegister),
-                          child: Text(
-                            'Register as Staff',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: AppTheme.dynamicPrimaryColor,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 24),
                   ],

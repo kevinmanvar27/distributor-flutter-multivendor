@@ -1,21 +1,24 @@
-// Subcategories Screen - Premium UI with Persistent Sidebar
-// Shows PRODUCTS from /categories/{id} API
-// Subcategories shown in PERSISTENT SIDEBAR (Blinkit-style) for filtering
-// Uses catagories.dart model (Data class for subcategories, Product class for products)
+// 
+// Subcategories View - Blinkit/Zepto style layout
+// Left sidebar: Subcategories list with "All" option
+// Right main area: Products grid
+// Selecting subcategory filters/loads products
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/product_card.dart';
+import '../../core/widgets/authenticated_image.dart';
 import '../../routes/app_routes.dart';
 import '../cart/cart_controller.dart';
+import '../main/main_controller.dart';
 import 'subcategories_controller.dart';
 
 class SubcategoriesView extends GetView<SubcategoriesController> {
   const SubcategoriesView({super.key});
 
   // Sidebar width constant
-  static const double _sidebarWidth = 90.0;
+  static const double _sidebarWidth = 85.0;
 
   @override
   Widget build(BuildContext context) {
@@ -27,23 +30,36 @@ class SubcategoriesView extends GetView<SubcategoriesController> {
 
           // Main content with persistent sidebar
           Expanded(
-            child: Row(
-              children: [
-                // Persistent Sidebar (always visible)
-                _buildPersistentSidebar(),
+            child: Obx(() {
+              // Loading state
+              if (controller.isLoading.value) {
+                return _buildLoadingState();
+              }
 
-                // Vertical divider
-                Container(
-                  width: 1,
-                  color: AppTheme.dividerColor,
-                ),
+              // Error state
+              if (controller.hasError.value && !controller.hasContent) {
+                return _buildErrorState();
+              }
 
-                // Main content area (products)
-                Expanded(
-                  child: _buildMainContent(),
-                ),
-              ],
-            ),
+              // Main layout: Sidebar + Products
+              return Row(
+                children: [
+                  // Persistent Sidebar (subcategories)
+                  _buildPersistentSidebar(),
+
+                  // Vertical divider
+                  Container(
+                    width: 1,
+                    color: AppTheme.dividerColor,
+                  ),
+
+                  // Main content area (products)
+                  Expanded(
+                    child: _buildProductsContent(),
+                  ),
+                ],
+              );
+            }),
           ),
         ],
       ),
@@ -89,7 +105,7 @@ class SubcategoriesView extends GetView<SubcategoriesController> {
                   controller.displayTitle,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 22,
+                    fontSize: 20,
                     fontWeight: FontWeight.w700,
                     letterSpacing: -0.5,
                   ),
@@ -112,6 +128,8 @@ class SubcategoriesView extends GetView<SubcategoriesController> {
                   onPressed: () => Get.toNamed(Routes.search),
                 ),
               ),
+              // Cart button
+              _buildCartButton(),
             ],
           ),
         ),
@@ -119,37 +137,91 @@ class SubcategoriesView extends GetView<SubcategoriesController> {
     );
   }
 
+  /// Cart button with badge
+  Widget _buildCartButton() {
+    return GetX<CartController>(
+      builder: (cartController) {
+        final itemCount = cartController.cartItems.length;
+        return GestureDetector(
+          onTap: () {
+            // Navigate to cart tab instead of separate route
+            try {
+              final mainController = Get.find<MainController>();
+              mainController.changeTab(2);
+              Get.until((route) => route.settings.name == '/main');
+            } catch (_) {
+              Get.toNamed('/cart');
+            }
+          },
+          child: Container(
+            margin: const EdgeInsets.all(4),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.shopping_cart_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+                if (itemCount > 0)
+                  Positioned(
+                    right: -4,
+                    top: -4,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        gradient: AppTheme.saleGradient,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                      child: Text(
+                        itemCount > 99 ? '99+' : itemCount.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Persistent Sidebar - Subcategories List
+  // ─────────────────────────────────────────────────────────────────────────────
+
   Widget _buildPersistentSidebar() {
     return Container(
       width: _sidebarWidth,
       color: Colors.grey.shade50,
       child: Obx(() {
-        if (controller.subcategories.isEmpty) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(8),
-              child: Text(
-                'No categories',
-                style: TextStyle(
-                  color: AppTheme.textSecondary,
-                  fontSize: 10,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          );
-        }
+        // Always show "All" option even if no subcategories
+        final itemCount = controller.subcategories.length + 1; // +1 for "All"
 
         return ListView.builder(
           padding: const EdgeInsets.symmetric(vertical: 8),
-          itemCount: controller.subcategories.length + 1, // +1 for "All"
+          itemCount: itemCount,
           itemBuilder: (context, index) {
             // First item is "All"
             if (index == 0) {
               return _buildSidebarItem(
                 name: 'All',
-                icon: Icons.grid_view_rounded,
-                count: controller.allProducts.length,
+                imageUrl: null,
                 isSelected: controller.selectedSubcategory.value == null,
                 onTap: () => controller.selectSubcategory(null),
               );
@@ -159,8 +231,7 @@ class SubcategoriesView extends GetView<SubcategoriesController> {
             final subcategory = controller.subcategories[index - 1];
             return _buildSidebarItem(
               name: subcategory.name,
-              icon: _getCategoryIcon(subcategory.name),
-              count: subcategory.productCount,
+              imageUrl: subcategory.imageUrl,
               isSelected: controller.selectedSubcategory.value?.id == subcategory.id,
               onTap: () => controller.selectSubcategory(subcategory),
             );
@@ -172,32 +243,29 @@ class SubcategoriesView extends GetView<SubcategoriesController> {
 
   Widget _buildSidebarItem({
     required String name,
-    required IconData icon,
-    int? count,
+    String? imageUrl,
     required bool isSelected,
     required VoidCallback onTap,
   }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
         decoration: BoxDecoration(
-          color: isSelected
-              ? Colors.white
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
           border: isSelected
               ? Border.all(
-                  color: AppTheme.dynamicPrimaryColor.withValues(alpha: 0.3),
+                  color: AppTheme.dynamicPrimaryColor.withValues(alpha: 0.4),
                   width: 1.5,
                 )
               : null,
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: AppTheme.dynamicPrimaryColor.withValues(alpha: 0.1),
-                    blurRadius: 4,
+                    color: AppTheme.dynamicPrimaryColor.withValues(alpha: 0.15),
+                    blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),
                 ]
@@ -206,34 +274,39 @@ class SubcategoriesView extends GetView<SubcategoriesController> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Icon with gradient background when selected
+            // Image or Icon
             Container(
-              width: 36,
-              height: 36,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
-                gradient: isSelected
-                    ? LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          AppTheme.dynamicPrimaryColor.withValues(alpha: 0.15),
-                          AppTheme.dynamicSecondaryColor.withValues(alpha: 0.1),
-                        ],
-                      )
-                    : null,
-                color: isSelected ? null : Colors.grey.shade200,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                icon,
-                size: 18,
                 color: isSelected
-                    ? AppTheme.dynamicPrimaryColor
-                    : AppTheme.textSecondary,
+                    ? AppTheme.dynamicPrimaryColor.withValues(alpha: 0.1)
+                    : Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(10),
               ),
+              clipBehavior: Clip.antiAlias,
+              child: imageUrl != null && imageUrl.isNotEmpty
+                  ? AuthenticatedImage(
+                      imageUrl: imageUrl,
+                      fit: BoxFit.cover,
+                      errorWidget: Icon(
+                        name == 'All' ? Icons.grid_view_rounded : Icons.category_outlined,
+                        size: 22,
+                        color: isSelected
+                            ? AppTheme.dynamicPrimaryColor
+                            : AppTheme.textSecondary,
+                      ),
+                    )
+                  : Icon(
+                      name == 'All' ? Icons.grid_view_rounded : _getCategoryIcon(name),
+                      size: 22,
+                      color: isSelected
+                          ? AppTheme.dynamicPrimaryColor
+                          : AppTheme.textSecondary,
+                    ),
             ),
             const SizedBox(height: 6),
-            // Name (small font, max 2 lines)
+            // Name
             Text(
               name,
               style: TextStyle(
@@ -248,20 +321,6 @@ class SubcategoriesView extends GetView<SubcategoriesController> {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-            // Product count (tiny badge)
-            if (count != null) ...[
-              const SizedBox(height: 3),
-              Text(
-                '$count',
-                style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w500,
-                  color: isSelected
-                      ? AppTheme.dynamicPrimaryColor.withValues(alpha: 0.7)
-                      : AppTheme.textTertiary,
-                ),
-              ),
-            ],
           ],
         ),
       ),
@@ -269,28 +328,147 @@ class SubcategoriesView extends GetView<SubcategoriesController> {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Main Content Area
+  // Products Content - Grid Display
   // ─────────────────────────────────────────────────────────────────────────────
 
-  Widget _buildMainContent() {
+  Widget _buildProductsContent() {
     return Obx(() {
-      // Loading state
-      if (controller.isLoading.value && controller.allProducts.isEmpty) {
-        return _buildLoadingState();
-      }
-
-      // Error state
-      if (controller.hasError.value && controller.allProducts.isEmpty) {
-        return _buildErrorState();
+      // Loading products state
+      if (controller.isLoadingProducts.value) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 36,
+                height: 36,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(AppTheme.dynamicPrimaryColor),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Loading products...',
+                style: AppTheme.bodySmall.copyWith(
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        );
       }
 
       // Empty state
-      if (controller.allProducts.isEmpty) {
+      if (controller.filteredProducts.isEmpty) {
         return _buildEmptyState();
       }
 
-      // Show products grid
-      return _buildProductsContent();
+      // Products grid
+      return RefreshIndicator(
+        onRefresh: controller.refresh,
+        color: AppTheme.dynamicPrimaryColor,
+        child: CustomScrollView(
+          slivers: [
+            // Section header
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                child: Row(
+                  children: [
+                    // Colored indicator bar
+                    Container(
+                      width: 4,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            AppTheme.dynamicPrimaryColor,
+                            AppTheme.dynamicSecondaryColor,
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Selected category name
+                    Expanded(
+                      child: Text(
+                        controller.selectedSubcategoryName,
+                        style: AppTheme.titleSmall.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    // Product count badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.dynamicPrimaryColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${controller.filteredProducts.length} items',
+                        style: AppTheme.bodySmall.copyWith(
+                          color: AppTheme.dynamicPrimaryColor,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Products Grid
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(10, 4, 10, 16),
+              sliver: SliverGrid(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  childAspectRatio: MediaQuery.of(Get.context!).size.height < 800 ? 0.50 : 0.58,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final product = controller.filteredProducts[index];
+                    return ProductCard(
+                      productId: product.id,
+                      name: product.name,
+                      imageUrl: product.imageUrl,
+                      mrp: product.mrpValue,
+                      sellingPrice: product.discountedPriceValue,
+                      inStock: product.inStock,
+                      discountPercent: product.discountPercent,
+                      description: product.description,
+                      variant: ProductCardVariant.grid,
+                      onTap: () => controller.onProductTap(product),
+                      onAddToCart: () => controller.addToCart(product),
+                      showAddToCart: true,
+                      heroTagPrefix: 'subcategory',
+                    );
+                  },
+                  childCount: controller.filteredProducts.length,
+                ),
+              ),
+            ),
+
+            // Bottom padding
+            const SliverToBoxAdapter(
+              child: SizedBox(height: 20),
+            ),
+          ],
+        ),
+      );
     });
   }
 
@@ -313,7 +491,7 @@ class SubcategoriesView extends GetView<SubcategoriesController> {
           ),
           const SizedBox(height: AppTheme.spacingMd),
           Text(
-            'Loading products...',
+            'Loading...',
             style: AppTheme.bodyMedium.copyWith(
               color: AppTheme.textSecondary,
             ),
@@ -324,288 +502,113 @@ class SubcategoriesView extends GetView<SubcategoriesController> {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Error State - Premium Design
+  // Error State
   // ─────────────────────────────────────────────────────────────────────────────
 
   Widget _buildErrorState() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(AppTheme.spacingXl),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const SizedBox(height: 60),
-          // Error icon with gradient background
-          Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppTheme.errorColor.withValues(alpha: 0.1),
-                  AppTheme.errorColor.withValues(alpha: 0.05),
-                ],
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppTheme.errorColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(40),
               ),
-              borderRadius: BorderRadius.circular(50),
-            ),
-            child: Icon(
-              Icons.error_outline_rounded,
-              size: 48,
-              color: AppTheme.errorColor.withValues(alpha: 0.8),
-            ),
-          ),
-          const SizedBox(height: AppTheme.spacingLg),
-          Text(
-            'Oops! Something went wrong',
-            style: AppTheme.titleMedium.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: AppTheme.spacingSm),
-          Obx(() => Text(
-            controller.errorMessage.value,
-            style: AppTheme.bodyMedium.copyWith(
-              color: AppTheme.textSecondary,
-            ),
-            textAlign: TextAlign.center,
-          )),
-          const SizedBox(height: AppTheme.spacingXl),
-          // Premium retry button
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppTheme.dynamicPrimaryColor,
-                  AppTheme.dynamicSecondaryColor,
-                ],
-              ),
-              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-              boxShadow: [
-                BoxShadow(
-                  color: AppTheme.dynamicPrimaryColor.withValues(alpha: 0.3),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: controller.refresh,
-                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppTheme.spacingXl,
-                    vertical: AppTheme.spacingMd,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.refresh, color: Colors.white, size: 20),
-                      const SizedBox(width: AppTheme.spacingSm),
-                      Text(
-                        'Try Again',
-                        style: AppTheme.labelLarge.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              child: Icon(
+                Icons.error_outline_rounded,
+                size: 40,
+                color: AppTheme.errorColor.withValues(alpha: 0.8),
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 20),
+            Text(
+              'Something went wrong',
+              style: AppTheme.titleMedium.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Obx(() => Text(
+              controller.errorMessage.value,
+              style: AppTheme.bodySmall.copyWith(
+                color: AppTheme.textSecondary,
+              ),
+              textAlign: TextAlign.center,
+            )),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: controller.refresh,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Try Again'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.dynamicPrimaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Empty State - Premium Design
+  // Empty State
   // ─────────────────────────────────────────────────────────────────────────────
 
   Widget _buildEmptyState() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(AppTheme.spacingXl),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const SizedBox(height: 60),
-          // Empty icon with gradient background
-          Container(
-            width: 120,
-            height: 120,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppTheme.dynamicPrimaryColor.withValues(alpha: 0.1),
-                  AppTheme.dynamicSecondaryColor.withValues(alpha: 0.05),
-                ],
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                color: AppTheme.dynamicPrimaryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(50),
               ),
-              borderRadius: BorderRadius.circular(60),
-            ),
-            child: Icon(
-              Icons.category_outlined,
-              size: 56,
-              color: AppTheme.dynamicPrimaryColor.withValues(alpha: 0.5),
-            ),
-          ),
-          const SizedBox(height: AppTheme.spacingLg),
-          Text(
-            'No Products',
-            style: AppTheme.titleMedium.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: AppTheme.spacingSm),
-          Text(
-            'This category doesn\'t have any products yet',
-            style: AppTheme.bodyMedium.copyWith(
-              color: AppTheme.textSecondary,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: AppTheme.spacingXl),
-          // Refresh button
-          OutlinedButton.icon(
-            onPressed: controller.refresh,
-            icon: const Icon(Icons.refresh),
-            label: const Text('Refresh'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppTheme.dynamicPrimaryColor,
-              side: BorderSide(color: AppTheme.dynamicPrimaryColor),
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.spacingLg,
-                vertical: AppTheme.spacingMd,
+              child: Icon(
+                Icons.inventory_2_outlined,
+                size: 48,
+                color: AppTheme.dynamicPrimaryColor.withValues(alpha: 0.5),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Products Content - Grid Display
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  Widget _buildProductsContent() {
-    return RefreshIndicator(
-      onRefresh: controller.refresh,
-      color: AppTheme.dynamicPrimaryColor,
-      child: CustomScrollView(
-        slivers: [
-          // Section header with filter indicator
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppTheme.spacingMd,
-                AppTheme.spacingMd,
-                AppTheme.spacingMd,
-                AppTheme.spacingSm,
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 4,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          AppTheme.dynamicPrimaryColor,
-                          AppTheme.dynamicSecondaryColor,
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  const SizedBox(width: AppTheme.spacingSm),
-                  Obx(() {
-                    final selectedSub = controller.selectedSubcategory.value;
-                    return SizedBox(
-                      width: 150,
-                      child: Text(
-                        selectedSub != null
-                            ? selectedSub.name
-                            : 'All Products',
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTheme.titleSmall.copyWith(
-                          fontWeight: FontWeight.w600,
-
-                        ),
-                      ),
-                    );
-                  }),
-                  const Spacer(),
-                  // Product count
-                  Obx(() => Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppTheme.dynamicPrimaryColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '${controller.filteredProducts.length} items',
-                      style: AppTheme.bodySmall.copyWith(
-                        color: AppTheme.dynamicPrimaryColor,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  )),
-                ],
+            const SizedBox(height: 20),
+            Text(
+              'No Products Found',
+              style: AppTheme.titleMedium.copyWith(
+                fontWeight: FontWeight.w600,
               ),
             ),
-          ),
-
-          // Products Grid
-          SliverPadding(
-            padding: const EdgeInsets.all(AppTheme.spacingMd),
-            sliver: Obx(() => SliverGrid(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                childAspectRatio: MediaQuery.of(Get.context!).size.height < 800 ? 0.48 : 0.55,
-                crossAxisSpacing: AppTheme.spacingMd,
-                mainAxisSpacing: AppTheme.spacingMd,
+            const SizedBox(height: 8),
+            Text(
+              'This category doesn\'t have any products yet',
+              style: AppTheme.bodySmall.copyWith(
+                color: AppTheme.textSecondary,
               ),
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final product = controller.filteredProducts[index];
-                  return ProductCard(
-                    productId: product.id,
-                    name: product.name,
-                    imageUrl: product.imageUrl,
-                    mrp: product.mrpValue,
-                    sellingPrice: product.sellingPriceValue,
-                    inStock: product.inStock,
-                    discountPercent: product.discountPercent,
-                    description: product.description,
-                    variant: ProductCardVariant.grid,
-                    onTap: () => controller.onProductTap(product),
-                    onAddToCart: () => controller.addToCart(product),
-                    showAddToCart: true,
-                    showFavorite: true,
-                    heroTagPrefix: 'subcategory',
-                  );
-                },
-                childCount: controller.filteredProducts.length,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            OutlinedButton.icon(
+              onPressed: controller.refresh,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Refresh'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.dynamicPrimaryColor,
+                side: BorderSide(color: AppTheme.dynamicPrimaryColor),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               ),
-            )),
-          ),
-
-          // Bottom padding
-          const SliverToBoxAdapter(
-            child: SizedBox(height: AppTheme.spacingXl),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -627,7 +630,4 @@ class SubcategoriesView extends GetView<SubcategoriesController> {
 
     return Icons.category_outlined;
   }
-
 }
-
-

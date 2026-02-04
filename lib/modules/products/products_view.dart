@@ -12,7 +12,6 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/product_card.dart';
 import '../../core/widgets/custom_text_field.dart';
 import '../cart/cart_controller.dart';
-import '../wishlist/wishlist_controller.dart';
 import 'products_controller.dart';
 
 class ProductsView extends GetView<ProductsController> {
@@ -474,14 +473,13 @@ class ProductsView extends GetView<ProductsController> {
                   }
                   
                   final product = controller.products[index];
-                  final wishlistController = Get.find<WishlistController>();
                   
-                  return Obx(() => ProductCard(
+                  return ProductCard(
                     productId: product.id,
                     name: product.name,
                     imageUrl: product.imageUrl,
                     mrp: product.mrpValue,
-                    sellingPrice: product.sellingPriceValue,
+                    sellingPrice: product.discountedPriceValue, // Use customer's discounted price
                     inStock: product.inStock,
                     discountPercent: product.discountPercent,
                     description: product.description,
@@ -491,10 +489,7 @@ class ProductsView extends GetView<ProductsController> {
                       final cartController = Get.find<CartController>();
                       cartController.addToCart(product.toProductItem());
                     },
-                    showFavorite: true,
-                    isFavorite: wishlistController.isInWishlist(product.id),
-                    onFavorite: () => wishlistController.toggleWishlist(product.toProductItem()),
-                  ));
+                  );
                 },
               )),
             ),

@@ -97,6 +97,12 @@ class Item {
         product = ProductItem.fromJson(json['product'] as Map<String, dynamic>);
       } else {
         // If no nested product, create from flat data
+        // Try to get image URL from various possible fields
+        final imageUrl = json['main_photo_url']?.toString() ?? 
+                         json['image']?.toString() ?? 
+                         json['product_image']?.toString() ??
+                         json['image_url']?.toString();
+        
         product = ProductItem(
           id: json['product_id'] ?? json['productId'] ?? 0,
           name: json['product_name'] ?? json['productName'] ?? 'Unknown Product',
@@ -111,10 +117,17 @@ class Item {
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
           discountedPrice: json['discounted_price']?.toString() ?? json['price']?.toString() ?? '0',
+          mainPhotoUrl: imageUrl,
         );
       }
     } catch (e) {
       // Fallback to minimal product
+      // Try to get image URL from various possible fields
+      final imageUrl = json['main_photo_url']?.toString() ?? 
+                       json['image']?.toString() ?? 
+                       json['product_image']?.toString() ??
+                       json['image_url']?.toString();
+      
       product = ProductItem(
         id: json['product_id'] ?? json['productId'] ?? 0,
         name: json['product_name'] ?? json['productName'] ?? 'Unknown Product',
@@ -129,6 +142,7 @@ class Item {
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
         discountedPrice: json['price']?.toString() ?? '0',
+        mainPhotoUrl: imageUrl,
       );
     }
 

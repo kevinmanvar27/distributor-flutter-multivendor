@@ -9,6 +9,7 @@
 
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import 'authenticated_image.dart';
 
 enum ProductCardVariant { grid, list }
 
@@ -30,10 +31,7 @@ class ProductCard extends StatelessWidget {
   final ProductCardVariant variant;
   final VoidCallback? onTap;
   final VoidCallback? onAddToCart;
-  final VoidCallback? onFavorite;
-  final bool isFavorite;
   final bool showAddToCart;
-  final bool showFavorite;
   final String? heroTagPrefix;
   
   const ProductCard({
@@ -52,10 +50,7 @@ class ProductCard extends StatelessWidget {
     this.variant = ProductCardVariant.grid,
     this.onTap,
     this.onAddToCart,
-    this.onFavorite,
-    this.isFavorite = false,
     this.showAddToCart = true,
-    this.showFavorite = true,
     this.heroTagPrefix,
   });
   
@@ -75,7 +70,6 @@ class ProductCard extends StatelessWidget {
   Widget _buildGridCard(BuildContext context) {
     final formattedSellingPrice = '₹${sellingPrice.toStringAsFixed(0)}';
     final formattedMrp = '₹${mrp.toStringAsFixed(0)}';
-    final discount = discountPercent ?? calculatedDiscount;
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -93,14 +87,13 @@ class ProductCard extends StatelessWidget {
                   _buildProductImage(),
                   if (hasDiscount) _buildPremiumSaleBadge(),
                   if (!inStock) _buildOutOfStockOverlay(),
-                  if (showFavorite) _buildPremiumFavoriteButton(),
                 ],
               ),
             ),
-            // Info section - Expanded to fill remaining space
-            Expanded(
+            // Info section - Flexible to prevent overflow
+            Flexible(
               child: Padding(
-                padding: const EdgeInsets.all(AppTheme.spacingSm),
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacingSm, vertical: 6),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
@@ -110,7 +103,7 @@ class ProductCard extends StatelessWidget {
                       Text(
                         brand!,
                         style: TextStyle(
-                          fontSize: 10,
+                          fontSize: 9,
                           fontWeight: FontWeight.w500,
                           color: AppTheme.textSecondary,
                           letterSpacing: 0.3,
@@ -119,52 +112,42 @@ class ProductCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     if (brand != null && brand!.isNotEmpty)
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 1),
                     // Product name
-                    Flexible(
-                      child: Text(
-                        name,
+                    Text(
+                      name,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.textPrimary,
+                        height: 1.15,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    // Price section
+                    Text(
+                      formattedSellingPrice,
+                      style: AppTheme.labelLarge.copyWith(fontSize: 13),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    // MRP crossed out
+                    if (hasDiscount)
+                      Text(
+                        formattedMrp,
                         style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: AppTheme.textPrimary,
-                          height: 1.2,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w400,
+                          letterSpacing: 0,
+                          height: 1.1,
+                          color: Color(0xFF9E9E9E),
+                          decoration: TextDecoration.lineThrough,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                    // Spacer pushes price to bottom
-                    // const Spacer(),
-                    // Rating (if available)
-                    if (rating != null)
-                      _buildRatingBadge(),
-                    // if (rating != null)
-                    //   const SizedBox(height: 3),
-                    // Price section
-                    // _buildPremiumPriceRow(),
-
-                    Text(
-                      formattedSellingPrice,
-                      style: AppTheme.labelLarge,
-                    ),
-                    // MRP crossed out
-                    if (hasDiscount) ...[
-                      const SizedBox(width: 6),
-                      Text(
-                        formattedMrp,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w400,
-                          letterSpacing: 0,
-                          height: 1.2,
-                          color: Color(0xFF9E9E9E),
-                          decoration: TextDecoration.lineThrough,
-                        ),
-                      ),
-                    ],
-
-
                   ],
                 ),
               ),
@@ -179,9 +162,6 @@ class ProductCard extends StatelessWidget {
   }
   
   Widget _buildListCard(BuildContext context) {
-    final formattedSellingPrice = '₹${sellingPrice.toStringAsFixed(0)}';
-    final formattedMrp = '₹${mrp.toStringAsFixed(0)}';
-    final discount = discountPercent ?? calculatedDiscount;
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -265,8 +245,6 @@ class ProductCard extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (showFavorite)
-                    _buildListFavoriteButton(),
                   if (showAddToCart && inStock)
                     _buildListCartButton(),
                 ],
@@ -279,15 +257,12 @@ class ProductCard extends StatelessWidget {
   }
   
   Widget _buildProductImage() {
-    final imageWidget = imageUrl != null
-        ? Image.network(
-            imageUrl!,
+    final imageWidget = imageUrl != null && imageUrl!.isNotEmpty
+        ? AuthenticatedImage(
+            imageUrl: imageUrl!,
             fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) => _buildPlaceholder(),
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return _buildLoadingPlaceholder();
-            },
+            placeholder: _buildLoadingPlaceholder(),
+            errorWidget: _buildPlaceholder(),
           )
         : _buildPlaceholder();
     
@@ -396,59 +371,6 @@ class ProductCard extends StatelessWidget {
     );
   }
   
-  Widget _buildPremiumFavoriteButton() {
-    return Positioned(
-      top: 8,
-      right: 8,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onFavorite,
-          borderRadius: BorderRadius.circular(20),
-          child: Container(
-            height: 32,
-            width: 32,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: AppTheme.shadowSm,
-            ),
-            child: Icon(
-              isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-              color: isFavorite ? AppTheme.errorColor : AppTheme.textSecondary,
-              size: 18,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildListFavoriteButton() {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onFavorite,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          height: 36,
-          width: 36,
-          decoration: BoxDecoration(
-            color: isFavorite 
-                ? AppTheme.errorColor.withValues(alpha: 0.1) 
-                : AppTheme.backgroundColor,
-            shape: BoxShape.circle,
-          ),
-          child: Icon(
-            isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-            color: isFavorite ? AppTheme.errorColor : AppTheme.textSecondary,
-            size: 20,
-          ),
-        ),
-      ),
-    );
-  }
-  
   Widget _buildListCartButton() {
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -492,7 +414,7 @@ class ProductCard extends StatelessWidget {
           onTap: onAddToCart,
           child: Padding(
             padding: const EdgeInsets.symmetric(
-              vertical: 12,
+              vertical: 8,
               horizontal: AppTheme.spacingSm,
             ),
             child: Row(
@@ -501,13 +423,13 @@ class ProductCard extends StatelessWidget {
                 Icon(
                   Icons.add_shopping_cart_rounded,
                   color: AppTheme.primaryColor,
-                  size: 16,
+                  size: 14,
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 4),
                 Text(
                   'Add to Cart',
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: AppTheme.primaryColor,
                     letterSpacing: 0.3,
@@ -819,11 +741,16 @@ class CompactProductCard extends StatelessWidget {
                 children: [
                   Container(
                     color: Colors.white,
-                    child: imageUrl != null
-                        ? Image.network(
-                            imageUrl!,
+                    child: imageUrl != null && imageUrl!.isNotEmpty
+                        ? AuthenticatedImage(
+                            imageUrl: imageUrl!,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Icon(
+                            placeholder: Icon(
+                              Icons.image_rounded,
+                              size: 40,
+                              color: Colors.grey[400],
+                            ),
+                            errorWidget: Icon(
                               Icons.image_rounded,
                               size: 40,
                               color: Colors.grey[400],

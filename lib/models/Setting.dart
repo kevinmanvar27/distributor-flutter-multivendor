@@ -3,6 +3,7 @@
 //     final setting = settingFromJson(jsonString);
 
 import 'dart:convert';
+import '../core/utils/image_utils.dart';
 
 Setting settingFromJson(String str) => Setting.fromJson(json.decode(str));
 
@@ -44,10 +45,10 @@ class Data {
   String secondaryFont;
   String fontSizeBase;
   bool darkModeEnabled;
-  dynamic logoUrl;
-  dynamic faviconUrl;
-  dynamic appIconUrl;
-  dynamic splashScreenUrl;
+  dynamic _logoUrl;
+  dynamic _faviconUrl;
+  dynamic _appIconUrl;
+  dynamic _splashScreenUrl;
   String brandName;
   String tagline;
 
@@ -63,13 +64,28 @@ class Data {
     required this.secondaryFont,
     required this.fontSizeBase,
     required this.darkModeEnabled,
-    required this.logoUrl,
-    required this.faviconUrl,
-    required this.appIconUrl,
-    required this.splashScreenUrl,
+    required dynamic logoUrl,
+    required dynamic faviconUrl,
+    required dynamic appIconUrl,
+    required dynamic splashScreenUrl,
     required this.brandName,
     required this.tagline,
-  });
+  }) : _logoUrl = logoUrl,
+       _faviconUrl = faviconUrl,
+       _appIconUrl = appIconUrl,
+       _splashScreenUrl = splashScreenUrl;
+
+  /// Get logo URL with proper base URL conversion
+  String? get logoUrl => _logoUrl != null ? buildImageUrl(_logoUrl.toString()) : null;
+  
+  /// Get favicon URL with proper base URL conversion
+  String? get faviconUrl => _faviconUrl != null ? buildImageUrl(_faviconUrl.toString()) : null;
+  
+  /// Get app icon URL with proper base URL conversion
+  String? get appIconUrl => _appIconUrl != null ? buildImageUrl(_appIconUrl.toString()) : null;
+  
+  /// Get splash screen URL with proper base URL conversion
+  String? get splashScreenUrl => _splashScreenUrl != null ? buildImageUrl(_splashScreenUrl.toString()) : null;
 
   factory Data.fromJson(Map<String, dynamic> json) => Data(
     primaryColor: json["primary_color"]?.toString() ?? '#2874F0',
@@ -103,10 +119,10 @@ class Data {
     "secondary_font": secondaryFont,
     "font_size_base": fontSizeBase,
     "dark_mode_enabled": darkModeEnabled,
-    "logo_url": logoUrl,
-    "favicon_url": faviconUrl,
-    "app_icon_url": appIconUrl,
-    "splash_screen_url": splashScreenUrl,
+    "logo_url": _logoUrl,
+    "favicon_url": _faviconUrl,
+    "app_icon_url": _appIconUrl,
+    "splash_screen_url": _splashScreenUrl,
     "brand_name": brandName,
     "tagline": tagline,
   };

@@ -10,14 +10,13 @@
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/dynamic_button.dart';
 import '../../core/widgets/dynamic_appbar.dart';
 import '../../core/widgets/custom_text_field.dart';
-import '../../core/services/storage_service.dart';
+import '../../core/widgets/authenticated_image.dart';
+import '../../core/utils/image_utils.dart';
 import '../../routes/app_routes.dart';
-import '../wishlist/wishlist_controller.dart';
 import 'profile_controller.dart';
 
 class ProfileView extends GetView<ProfileController> {
@@ -132,61 +131,24 @@ class ProfileView extends GetView<ProfileController> {
   Widget _buildProfileHeader(BuildContext context) {
     return Column(
       children: [
-        // Avatar with edit option
-        Stack(
-          children: [
-            Obx(() => GestureDetector(
-              onTap: controller.showAvatarOptions,
-              child: controller.userAvatarUrl != null
-                  ? _buildAuthenticatedAvatar(controller.userAvatarUrl!)
-                  : _buildDefaultAvatar(),
-            )),
-            // Camera icon overlay
-            Positioned(
-              bottom: 0,
-              right: 0,
-              child: GestureDetector(
-                onTap: controller.showAvatarOptions,
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryColor,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
-                  ),
-                  child: Obx(() => controller.isUploadingAvatar.value
-                      ? const Padding(
-                          padding: EdgeInsets.all(6),
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(
-                          Icons.camera_alt,
-                          size: 16,
-                          color: Colors.white,
-                        )),
-                ),
-              ),
-            ),
-          ],
-        ),
+        // Avatar (display only, no upload)
+        Obx(() => controller.userAvatarUrl != null
+            ? _buildAuthenticatedAvatar(controller.userAvatarUrl!)
+            : _buildDefaultAvatar()),
         const SizedBox(height: AppTheme.spacingMD),
-        // Name
-        Text(
+        // Name - wrapped in Obx for reactivity
+        Obx(() => Text(
           controller.userName,
           style: AppTheme.headingLarge,
-        ),
+        )),
         const SizedBox(height: AppTheme.spacingXS),
-        // Email
-        Text(
+        // Email - wrapped in Obx for reactivity
+        Obx(() => Text(
           controller.userEmail,
           style: AppTheme.bodyMedium.copyWith(
             color: AppTheme.textSecondary,
           ),
-        ),
+        )),
       ],
     );
   }
@@ -367,39 +329,6 @@ class ProfileView extends GetView<ProfileController> {
             onTap: () => Get.toNamed(Routes.notifications),
           ),
           const Divider(height: 1),
-          // Wishlist option - shows count badge
-          Obx(() {
-            final wishlistController = Get.find<WishlistController>();
-            return _buildSettingsTile(
-              icon: Icons.favorite_outline,
-              title: 'Wishlist',
-              subtitle: wishlistController.wishlistCount > 0
-                  ? '${wishlistController.wishlistCount} saved items'
-                  : 'Your saved products',
-              onTap: () => Get.toNamed(Routes.wishlist),
-              trailing: wishlistController.wishlistCount > 0
-                  ? Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primaryColor,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '${wishlistController.wishlistCount}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    )
-                  : null,
-            );
-          }),
-          const Divider(height: 1),
           _buildSettingsTile(
             icon: Icons.receipt_long_outlined,
             title: 'My Invoices',
@@ -540,8 +469,8 @@ class ProfileView extends GetView<ProfileController> {
 
   /// Build avatar with authentication headers for protected images
   Widget _buildAuthenticatedAvatar(String avatarUrl) {
-    final storageService = Get.find<StorageService>();
-    final token = storageService.getToken();
+    // Convert URL to use correct base URL
+    final convertedUrl = buildImageUrl(avatarUrl) ?? avatarUrl;
 
     return ClipOval(
       child: Container(
@@ -551,11 +480,12 @@ class ProfileView extends GetView<ProfileController> {
           shape: BoxShape.circle,
           boxShadow: AppTheme.shadowMd,
         ),
-        child: CachedNetworkImage(
-          imageUrl: avatarUrl,
+        child: AuthenticatedImage(
+          imageUrl: convertedUrl,
           fit: BoxFit.cover,
-          httpHeaders: token != null ? {'Authorization': 'Bearer $token'} : null,
-          placeholder: (context, url) => Container(
+          width: 100,
+          height: 100,
+          placeholder: Container(
             color: AppTheme.primaryColor,
             child: Center(
               child: Text(
@@ -567,7 +497,7 @@ class ProfileView extends GetView<ProfileController> {
               ),
             ),
           ),
-          errorWidget: (context, url, error) => Container(
+          errorWidget: Container(
             color: AppTheme.primaryColor,
             child: Center(
               child: Text(

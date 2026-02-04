@@ -2,7 +2,7 @@
 // Search Controller
 // Handles search functionality with:
 // - Debounced search input
-// - API integration with /products/search
+// - API integration with /customer/search
 // - Pagination support
 // - Search history (optional)
 //
@@ -148,7 +148,8 @@ class SearchController extends GetxController {
     }
   }
   
-  /// Fetch search results from API
+  /// Fetch search results from /customer/search API
+  /// Returns vendor-scoped products with customer discount pricing
   Future<List<Product>> _fetchSearchResults(String query, int page) async {
     final queryParams = <String, dynamic>{
       'q': query,
@@ -156,10 +157,11 @@ class SearchController extends GetxController {
       'per_page': _perPage,
     };
     
-    debugPrint('SearchController: Fetching /products/search with params: $queryParams');
+    // Use customer search API - returns vendor-scoped products
+    debugPrint('SearchController: Fetching /customer/search with params: $queryParams');
     
     final response = await _apiService.get(
-      '/products/search',
+      '/customer/search',
       queryParameters: queryParams,
     );
     
